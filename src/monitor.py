@@ -113,9 +113,11 @@ class YouTubeMonitor:
         return self._fetch_via_ytdlp(channel_id, channel_name)
 
     def _fetch_via_ytdlp(self, channel_id: str, channel_name: str) -> list[dict]:
-        """Extract the 15 latest uploads directly from the channel page using yt-dlp."""
-        channel_url = f"https://www.youtube.com/channel/{channel_id}/videos"
-        logger.info(f"Scanning {channel_url}...")
+        """Extract the latest regular videos AND Shorts directly from the channel page using yt-dlp."""
+        endpoints = [
+            (f"https://www.youtube.com/channel/{channel_id}/videos", "videos"),
+            (f"https://www.youtube.com/channel/{channel_id}/shorts", "shorts"),
+        ]
 
         ydl_opts = {
             "extract_flat": "in_playlist",
@@ -125,34 +127,38 @@ class YouTubeMonitor:
         }
 
         videos = []
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                res = ydl.extract_info(channel_url, download=False)
-                entries = res.get("entries", []) if res else []
+        seen_ids = set()
 
-                for entry in entries:
-                    if not entry:
-                        continue
-                    video_id = entry.get("id")
-                    if not video_id:
-                        continue
-                    videos.append({
-                        "video_id": video_id,
-                        "channel_id": channel_id,
-                        "channel_name": channel_name,
-                        "title": entry.get("title", ""),
-                        "url": f"https://www.youtube.com/watch?v={video_id}",
-                        "published": "",
-                        "description": entry.get("description", ""),
-                        "thumbnail": entry.get("thumbnails", [{}])[-1].get("url", "") if entry.get("thumbnails") else "",
-                    })
+        for url, kind in endpoints:
+            logger.info(f"Scanning {kind}: {url}...")
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    res = ydl.extract_info(url, download=False)
+                    entries = res.get("entries", []) if res else []
 
-            logger.info(f"[{channel_name}] Found {len(videos)} video(s) via yt-dlp")
-            return videos
+                    for entry in entries:
+                        if not entry:
+                            continue
+                        video_id = entry.get("id")
+                        if not video_id or video_id in seen_ids:
+                            continue
+                        seen_ids.add(video_id)
+                        videos.append({
+                            "video_id": video_id,
+                            "channel_id": channel_id,
+                            "channel_name": channel_name,
+                            "title": entry.get("title", ""),
+                            "url": f"https://www.youtube.com/watch?v={video_id}",
+                            "published": "",
+                            "description": entry.get("description", ""),
+                            "thumbnail": entry.get("thumbnails", [{}])[-1].get("url", "") if entry.get("thumbnails") else "",
+                            "is_short": (kind == "shorts"),
+                        })
+            except Exception as e:
+                logger.warning(f"[{channel_name}] Failed to scan {kind} tab ({url}): {e}")
 
-        except Exception as e:
-            logger.error(f"[{channel_name}] Failed to scan channel with yt-dlp: {e}")
-            return []
+        logger.info(f"[{channel_name}] Total found: {len(videos)} video(s) and Shorts via yt-dlp")
+        return videos
 
 
 def _get_description(entry) -> str:

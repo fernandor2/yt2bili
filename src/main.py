@@ -8,6 +8,7 @@ translates subtitles to Chinese via Ollama, burns them in, and uploads to Bilibi
 import logging
 import sys
 import os
+import re
 import yaml
 import time
 
@@ -139,18 +140,52 @@ def process_video(video: dict, config: dict, db: Database) -> bool:
         if len(final_title) > 80:
             final_title = zh_title[:80]
 
-        zh_desc = translator.translate_text(
-            original_description[:500] if original_description else title,
-            context="video description",
-        )
-        final_desc = (
-            f"{zh_desc}\n\n"
-            f"——————————————————\n"
+        # Separate narrative text from links and timestamps
+        narrative_lines = []
+        extra_lines = []
+        for raw_line in (original_description or "").splitlines():
+            line_str = raw_line.strip()
+            if not line_str:
+                if narrative_lines and not extra_lines:
+                    narrative_lines.append("")
+                elif extra_lines:
+                    extra_lines.append("")
+                continue
+
+            # Check if line is a timestamp (0:00 ..., 12:34 ...) or link (http/https)
+            is_timestamp = bool(re.match(r"^\d{1,2}:\d{2}", line_str))
+            is_link = ("http://" in line_str or "https://" in line_str)
+
+            if is_timestamp or is_link:
+                extra_lines.append(line_str)
+            else:
+                if not extra_lines:
+                    narrative_lines.append(line_str)
+                else:
+                    extra_lines.append(line_str)
+
+        narrative_text = "\n".join(narrative_lines).strip()
+        extra_text = "\n".join(extra_lines).strip()
+
+        if narrative_text:
+            zh_desc = translator.translate_text(narrative_text[:1400], context="video description")
+        else:
+            zh_desc = title
+
+        # Assemble full description with Chinese translation + extra links/timestamps + attribution
+        desc_parts = [zh_desc]
+        if extra_text:
+            desc_parts.append("\n\n" + extra_text)
+
+        attribution = (
+            f"\n\n——————————————————\n"
             f"Original: {title}\n"
             f"Source: https://www.youtube.com/watch?v={video_id}\n"
             f"Channel: {channel_name}\n"
             f"Auto-translated Chinese subtitles (自动翻译中文字幕)"
         )
+        desc_parts.append(attribution)
+        final_desc = "".join(desc_parts)[:2000]
 
         # ── Step 4: Burn subtitles into video ──
         if translated_sub_path and sub_config.get("burn_in", True):

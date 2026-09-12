@@ -161,15 +161,48 @@ class SubtitleTranslator:
 
         # Parse the JSON response, handling potential markdown code blocks
         content = self._extract_json(content)
-        result_list = json.loads(content)
+        result_data = json.loads(content)
 
-        # Build id → zh mapping
+        # Build id → zh mapping supporting dicts, raw string lists, or nested objects
         translations = {}
-        for item in result_list:
-            idx = item.get("id")
-            zh = item.get("zh", "")
-            if idx is not None:
-                translations[idx] = zh
+        if isinstance(result_data, list):
+            for i, item in enumerate(result_data):
+                if isinstance(item, dict):
+                    idx = item.get("id", i)
+                    zh = item.get("zh", item.get("text", item.get("translation", "")))
+                    try:
+                        translations[int(idx)] = str(zh)
+                    except (ValueError, TypeError):
+                        translations[i] = str(zh)
+                elif isinstance(item, str):
+                    translations[i] = item
+        elif isinstance(result_data, dict):
+            # Might be {"translations": [...]} or {"subtitles": [...]}
+            sub_list = None
+            for key in ["translations", "subtitles", "data", "result", "items"]:
+                if key in result_data and isinstance(result_data[key], list):
+                    sub_list = result_data[key]
+                    break
+
+            if sub_list is not None:
+                for i, item in enumerate(sub_list):
+                    if isinstance(item, dict):
+                        idx = item.get("id", i)
+                        zh = item.get("zh", item.get("text", ""))
+                        try:
+                            translations[int(idx)] = str(zh)
+                        except (ValueError, TypeError):
+                            translations[i] = str(zh)
+                    elif isinstance(item, str):
+                        translations[i] = item
+            else:
+                # Key-value map like {"0": "...", "1": "..."}
+                for k, v in result_data.items():
+                    try:
+                        idx = int(k)
+                        translations[idx] = str(v)
+                    except (ValueError, TypeError):
+                        pass
 
         # Validate: ensure all IDs are present
         expected_ids = set(range(len(batch)))
@@ -234,17 +267,41 @@ class SubtitleTranslator:
             return text
 
     def _extract_json(self, content: str) -> str:
-        """Extract JSON from LLM response, handling markdown code blocks."""
-        # Remove markdown code blocks if present
+        """Extract JSON from LLM response, handling markdown code blocks and raw text."""
+        # 1. Remove markdown code blocks if present
         if "```" in content:
             match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", content, re.DOTALL)
             if match:
-                return match.group(1).strip()
+                content = match.group(1).strip()
 
-        # Try to find JSON array directly
-        match = re.search(r"\[.*\]", content, re.DOTALL)
-        if match:
-            return match.group(0)
+        # 2. If it parses directly, return it
+        try:
+            json.loads(content)
+            return content
+        except Exception:
+            pass
+
+        # 3. Try to find the outer JSON array [...]
+        first_bracket = content.find("[")
+        last_bracket = content.rfind("]")
+        if first_bracket != -1 and last_bracket != -1 and last_bracket > first_bracket:
+            sub = content[first_bracket : last_bracket + 1]
+            try:
+                json.loads(sub)
+                return sub
+            except Exception:
+                pass
+
+        # 4. Try to find outer JSON object {...}
+        first_brace = content.find("{")
+        last_brace = content.rfind("}")
+        if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+            sub = content[first_brace : last_brace + 1]
+            try:
+                json.loads(sub)
+                return sub
+            except Exception:
+                pass
 
         return content
 

@@ -49,7 +49,8 @@ class VideoDownloader:
         opts = {
             "extractor_args": {
                 "youtube": {
-                    "player_client": ["android", "ios", "web_creator", "web"],
+                    # 'web' and 'tv' provide unrestricted 1080p DASH streams without SABR throttling
+                    "player_client": ["web", "tv"],
                 }
             },
             "retries": 10,
