@@ -99,6 +99,15 @@ subtitles:
 
 # Pipeline settings
 pipeline:
+  # Cooldown in minutes between consecutive Bilibili uploads.
+  # Prevents Bilibili anti-spam / risk control (风控: code 21070 'Submissions too frequent').
+  # Default: 60 minutes.
+  upload_cooldown_minutes: 60
+
+  # Maximum number of videos to upload per pipeline run.
+  # Keeping this at 1 smoothly distributes uploads across the day without flooding.
+  max_uploads_per_run: 1
+
   # Directory for downloaded videos
   download_dir: "/app/data/downloads"
   # SQLite database for tracking processed videos

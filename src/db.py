@@ -1,6 +1,6 @@
 """
-Database module - SQLite-based tracking of processed videos.
-Prevents re-processing and tracks failures for retry logic.
+Database module - SQLite-based tracking of processed videos and upload rate limiting.
+Prevents re-processing, tracks failures for retry logic, and enforces upload cooldowns.
 """
 
 import sqlite3
@@ -34,6 +34,12 @@ class Database:
                     error_msg   TEXT,
                     created_at  TEXT DEFAULT (datetime('now')),
                     updated_at  TEXT DEFAULT (datetime('now'))
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS metadata (
+                    key   TEXT PRIMARY KEY,
+                    value TEXT
                 )
             """)
             conn.execute("""
@@ -82,6 +88,21 @@ class Database:
             )
             conn.commit()
 
+    def get_pending_videos(self, limit: int = 20) -> list[dict]:
+        """Fetch pending videos ordered by oldest discovered first."""
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT video_id, channel_id, title, created_at
+                FROM processed_videos
+                WHERE status = 'pending'
+                ORDER BY created_at ASC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
     def mark_done(self, video_id: str):
         """Mark a video as successfully processed."""
         with self._get_conn() as conn:
@@ -112,6 +133,46 @@ class Database:
             )
             conn.commit()
         logger.warning(f"Marked {video_id} as failed: {error_msg}")
+
+    def set_metadata(self, key: str, value: str):
+        """Set a persistent key-value metadata entry."""
+        with self._get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO metadata (key, value)
+                VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (key, value),
+            )
+            conn.commit()
+
+    def get_metadata(self, key: str) -> str | None:
+        """Get a persistent key-value metadata entry."""
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT value FROM metadata WHERE key = ?",
+                (key,),
+            ).fetchone()
+            return row["value"] if row else None
+
+    def record_upload_success(self, video_id: str):
+        """Mark video as done and record the upload timestamp for cooldown calculation."""
+        self.mark_done(video_id)
+        now_str = datetime.utcnow().isoformat()
+        self.set_metadata("last_upload_time", now_str)
+        logger.info(f"Recorded last upload timestamp: {now_str}")
+
+    def get_seconds_since_last_upload(self) -> float | None:
+        """Calculate how many seconds have elapsed since the most recent upload."""
+        val = self.get_metadata("last_upload_time")
+        if not val:
+            return None
+        try:
+            last_dt = datetime.fromisoformat(val)
+            return (datetime.utcnow() - last_dt).total_seconds()
+        except Exception:
+            return None
 
     def get_stats(self) -> dict:
         """Get processing statistics."""

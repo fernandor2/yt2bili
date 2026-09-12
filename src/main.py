@@ -163,7 +163,7 @@ def process_video(video: dict, config: dict, db: Database) -> bool:
 
         if upload_result:
             logger.info(f"✅ Upload successful for {video_id}")
-            db.mark_done(video_id)
+            db.record_upload_success(video_id)
         else:
             logger.error(f"❌ Upload failed for {video_id}")
             db.mark_failed(video_id, "upload_failed")
@@ -202,15 +202,31 @@ def main():
     db = Database(config["pipeline"]["db_path"])
     monitor = YouTubeMonitor(config)
 
-    # Get new videos from all monitored channels
+    # 1. Check all monitored channels via RSS (discovers & marks new videos as pending)
     new_videos = monitor.check_all_channels()
-    logger.info(f"Found {len(new_videos)} new video(s) to process")
+    logger.info(f"Found {len(new_videos)} candidate video(s) from RSS feed")
+
+    # 2. Check Bilibili upload cooldown (prevents anti-spam rate limiting)
+    cooldown_minutes = config.get("pipeline", {}).get("upload_cooldown_minutes", 60)
+    max_uploads_per_run = config.get("pipeline", {}).get("max_uploads_per_run", 1)
+
+    seconds_since_last = db.get_seconds_since_last_upload()
+    if seconds_since_last is not None and seconds_since_last < (cooldown_minutes * 60):
+        remaining_seconds = (cooldown_minutes * 60) - seconds_since_last
+        remaining_min = int(remaining_seconds // 60)
+        remaining_sec = int(remaining_seconds % 60)
+        logger.info(
+            f"⏳ Upload cooldown active. Last upload was {int(seconds_since_last // 60)}m ago. "
+            f"Need to wait {remaining_min}m {remaining_sec}s more (cooldown: {cooldown_minutes}m). "
+            f"Pending videos will be uploaded in subsequent cycles."
+        )
+        return
 
     if not new_videos:
         logger.info("No new videos. Pipeline complete.")
         return
 
-    # Process each video
+    # 3. Process candidate videos respecting upload limit per cycle
     success_count = 0
     for video in new_videos:
         video_id = video["video_id"]
@@ -227,10 +243,18 @@ def main():
         if process_video(video, config, db):
             success_count += 1
 
-        # Brief pause between videos to avoid rate limits
+            # Enforce max uploads per run to space out uploads over time
+            if success_count >= max_uploads_per_run:
+                logger.info(
+                    f"Reached max uploads limit for this run ({max_uploads_per_run}). "
+                    f"Remaining videos will be processed after the {cooldown_minutes}-minute cooldown."
+                )
+                break
+
+        # Brief pause between videos
         time.sleep(5)
 
-    logger.info(f"Pipeline complete: {success_count}/{len(new_videos)} processed successfully")
+    logger.info(f"Pipeline run finished: {success_count} video(s) uploaded successfully")
 
 
 if __name__ == "__main__":
