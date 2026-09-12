@@ -66,8 +66,8 @@ translation:
   ollama_host: "http://ollama:11434"
   # Model for translation (qwen2.5 series is the top open-weights model for EN/ES -> CN)
   model: "qwen2.5:14b"
-  # Lines per translation batch (20-40 recommended for context preservation)
-  batch_size: 30
+  # Lines per translation batch (10-15 optimal for 14B model on CPU)
+  batch_size: 15
   # Temperature for translation (lower = more deterministic and consistent)
   temperature: 0.3
 
