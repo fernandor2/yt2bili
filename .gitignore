@@ -1,0 +1,21 @@
+# Environment & credentials
+cookies.json
+.env
+
+# Persistent data and logs
+data/
+*.log
+*.db
+*.sqlite
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+venv/
+.venv/
+
+# Operating System files
+.DS_Store
+Thumbs.db

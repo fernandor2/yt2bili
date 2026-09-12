@@ -1,0 +1,67 @@
+# ======================================================
+# yt2bili Configuration
+# ======================================================
+
+# YouTube channels to monitor
+# Get channel IDs from: https://www.youtube.com/@ChannelHandle
+# View page source → search for "channelId" or "UC"
+channels:
+  - name: "Example Channel"
+    channel_id: "UCxxxxxxxxxxxxxxxxxxxxxxxxx"
+    # Optional: override Bilibili category per channel
+    # tid: 17
+
+# Bilibili upload settings
+bilibili:
+  # Category/Partition ID for uploaded videos
+  # 17 = Gaming (单机游戏), 122 = Vlog (野生技协), 21 = Daily Life (日常)
+  # 95 = Digital (数码), 207 = Science (科学科普), 138 = Pop Culture (搞笑)
+  # Full list: https://github.com/biliup/biliup-rs/blob/master/crates/biliup/src/server/template.json
+  tid: 17
+  # Copyright: 1 = original (自制), 2 = reprint (转载)
+  copyright: 2
+  # Tags (comma-separated, max 12)
+  tags: "搬运,翻译,中文字幕"
+  # Cookie file path
+  cookie_file: "/app/cookies.json"
+
+# Translation settings (Ollama)
+translation:
+  # Ollama API base URL (uses OLLAMA_HOST env var if set)
+  ollama_host: "http://host.docker.internal:11434"
+  # Model for translation (qwen2.5 series excels at EN→CN)
+  model: "qwen2.5:7b"
+  # Lines per translation batch (20-40 recommended)
+  batch_size: 30
+  # Temperature for translation (lower = more consistent)
+  temperature: 0.3
+
+# Subtitle settings
+subtitles:
+  # Source language(s) for subtitles (regex patterns supported)
+  source_langs:
+    - "en.*"
+    - "en"
+  # Whether to burn subtitles into video (recommended for Bilibili)
+  burn_in: true
+  # FFmpeg encoding preset (ultrafast/superfast/veryfast/faster/fast/medium)
+  # faster = good balance of speed and quality for Ryzen 5700G
+  ffmpeg_preset: "faster"
+  # CRF quality (18-23 recommended; lower = better quality, bigger file)
+  ffmpeg_crf: 20
+  # Font for burned subtitles
+  font_name: "Noto Sans CJK SC"
+  font_size: 18
+
+# Pipeline settings
+pipeline:
+  # Directory for downloaded videos
+  download_dir: "/app/data/downloads"
+  # SQLite database for tracking processed videos
+  db_path: "/app/data/db/processed.db"
+  # Max concurrent downloads
+  max_downloads: 2
+  # Delete local files after successful upload
+  cleanup_after_upload: true
+  # Max video file size in GB (skip larger files)
+  max_file_size_gb: 8
