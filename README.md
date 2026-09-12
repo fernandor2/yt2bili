@@ -58,7 +58,7 @@ Engineered specifically for local mini-PC servers (such as AMD Ryzen 5700G, 32GB
 flowchart LR
     subgraph Host["Mini PC Server (Ryzen 5700G · 32GB RAM)"]
         subgraph DockerNet["Docker Network: ai-net"]
-            Ollama["🤖 Ollama Container\nhttp://ollama:11434\nModel: qwen2.5:7b"]
+            Ollama["🤖 Ollama Container\nhttp://ollama:11434\nModel: qwen2.5:14b"]
             
             subgraph YT2BILI["Docker Container: yt2bili"]
                 Cron["⏰ Cron Daemon\n(07:00 to 01:30)"]
@@ -303,3 +303,4 @@ YouTube frequently challenges web downloaders with bot detection, SABR format th
    - Export your YouTube cookies in standard Netscape format using a browser extension (such as *Get cookies.txt LOCALLY*).
    - Save the file as `./data/yt_cookies.txt` on your mini PC.
    - The container automatically detects this file and routes requests through your authenticated session.
+   

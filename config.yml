@@ -17,7 +17,7 @@ bilibili:
   # Default Category/Partition ID if YouTube category cannot be detected or mapped
   # 17 = Gaming (单机游戏), 188 = Tech/Digital (数码), 201 = Science/Education (科学科普)
   # 21 = Daily Life (日常), 138 = Comedy (搞笑), 71 = Entertainment (娱乐综合)
-  tid: 17
+  tid: 71
 
   # Dynamic YouTube-to-Bilibili Category Mappings
   # The system detects YouTube's category automatically. You can customize or override here:
@@ -53,7 +53,7 @@ translation:
   # Ollama API URL: connects directly to the container 'ollama' in the 'ai-net' Docker network
   ollama_host: "http://ollama:11434"
   # Model for translation (qwen2.5 series is the top open-weights model for EN/ES -> CN)
-  model: "qwen2.5:7b"
+  model: "qwen2.5:14b"
   # Lines per translation batch (20-40 recommended for context preservation)
   batch_size: 30
   # Temperature for translation (lower = more deterministic and consistent)
