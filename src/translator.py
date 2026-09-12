@@ -8,6 +8,9 @@ import json
 import logging
 import re
 import time
+import warnings
+
+warnings.filterwarnings("ignore")
 
 import pysubs2
 import requests

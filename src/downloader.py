@@ -9,7 +9,10 @@ import glob
 import logging
 import os
 import re
+import warnings
 import yt_dlp
+
+warnings.filterwarnings("ignore")
 
 logger = logging.getLogger("yt2bili.downloader")
 
@@ -25,7 +28,7 @@ class VideoDownloader:
         )
         # Optional YouTube cookies file paths (Netscape format)
         self.yt_cookies_paths = [
-            config.get("pipeline", {}).get("youtube_cookies_file", "/app/data/yt_cookies.txt"),
+            config.get("pipeline", {}).get("youtube_cookies_file"),
             "/app/data/yt_cookies.txt",
             "/app/yt_cookies.txt",
         ]
@@ -52,7 +55,8 @@ class VideoDownloader:
             "fragment_retries": 10,
             "file_access_retries": 5,
             "ignoreerrors": False,
-            "no_warnings": False,
+            "quiet": True,
+            "no_warnings": True,
             "sleep_interval": 1,
             "max_sleep_interval": 3,
             "socket_timeout": 30,

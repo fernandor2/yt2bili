@@ -153,10 +153,17 @@ class YouTubeMonitor:
         if cached_date:
             return cached_date, ""
 
+        class QuietLogger:
+            def debug(self, msg): pass
+            def info(self, msg): pass
+            def warning(self, msg): pass
+            def error(self, msg): pass
+
         ydl_opts = {
             "quiet": True,
             "no_warnings": True,
             "skip_download": True,
+            "logger": QuietLogger(),
         }
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:

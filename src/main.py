@@ -301,20 +301,11 @@ def run_pipeline_cycle(config: dict) -> int:
 
     seconds_since_last = db.get_seconds_since_last_upload()
     if seconds_since_last is not None and seconds_since_last < (cooldown_minutes * 60):
-        remaining_seconds = (cooldown_minutes * 60) - seconds_since_last
-        remaining_min = int(remaining_seconds // 60)
-        remaining_sec = int(remaining_seconds % 60)
-        logger.info(
-            f"⏳ Upload cooldown active. Last upload was {int(seconds_since_last // 60)}m ago. "
-            f"Need to wait {remaining_min}m {remaining_sec}s more (cooldown: {cooldown_minutes}m). "
-            f"Pending videos will be uploaded in subsequent cycles."
-        )
         return 0
 
     # 3. Pull pending videos from the SQLite queue
     pending_videos = db.get_pending_videos(limit=20)
     if not pending_videos:
-        logger.info("No pending videos in database queue. Pipeline cycle complete.")
         return 0
 
     logger.info(
@@ -328,11 +319,9 @@ def run_pipeline_cycle(config: dict) -> int:
 
         # Skip if already processed or recently failed
         if db.is_processed(video_id):
-            logger.info(f"Skipping {video_id} (already marked done)")
             continue
 
         if db.is_recently_failed(video_id, hours=24):
-            logger.info(f"Skipping {video_id} (failed within 24h, will retry later)")
             continue
 
         # Look up channel override and fallback name if available
@@ -347,15 +336,12 @@ def run_pipeline_cycle(config: dict) -> int:
         if process_video(video, config, db):
             success_count += 1
             if success_count >= max_uploads_per_run:
-                logger.info(
-                    f"Reached max uploads limit for this run ({max_uploads_per_run}). "
-                    f"Remaining videos will be processed after the {cooldown_minutes}-minute cooldown."
-                )
                 break
 
         time.sleep(5)
 
-    logger.info(f"Pipeline check finished: {success_count} video(s) uploaded successfully")
+    if success_count > 0:
+        logger.info(f"Pipeline check finished: {success_count} video(s) uploaded successfully")
     return success_count
 
 
@@ -369,39 +355,27 @@ def is_within_active_hours() -> bool:
 
 
 def run_daemon(config: dict):
-    """Run pipeline continuously in the foreground with live logs streamed to docker."""
+    """Run pipeline continuously in the background without noisy countdown or idle spam."""
     interval_min = config.get("pipeline", {}).get("check_interval_minutes", 30)
-    logger.info("=" * 60)
-    logger.info("🔄 yt2bili Continuous Daemon Active")
-    logger.info(f"   Check interval: {interval_min} minutes")
-    logger.info("   Active operating hours: 07:00 - 02:00")
-    logger.info("   All execution logs stream live to Docker output.")
-    logger.info("=" * 60)
+    logger.info("yt2bili daemon started (active hours: 07:00 - 02:00)")
 
     # Initial check upon container start
     try:
         if is_within_active_hours():
             run_pipeline_cycle(config)
-        else:
-            logger.info("🌙 Starting outside active hours (07:00 - 02:00). Initial check skipped.")
     except Exception as e:
-        logger.exception(f"Error in initial pipeline cycle: {e}")
+        logger.exception(f"Error in pipeline cycle: {e}")
 
     while True:
-        logger.info(f"⏳ Sleeping for {interval_min} minutes until next scheduled check...")
         time.sleep(interval_min * 60)
 
         if not is_within_active_hours():
-            logger.info(
-                f"🌙 Current hour ({datetime.now().strftime('%H:%M')}) is outside active hours (07:00 - 02:00). "
-                f"Will check again in {interval_min} minutes."
-            )
             continue
 
         try:
             run_pipeline_cycle(config)
         except Exception as e:
-            logger.exception(f"Error in scheduled pipeline cycle: {e}")
+            logger.exception(f"Error in pipeline cycle: {e}")
 
 
 def main():
