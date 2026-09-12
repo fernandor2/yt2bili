@@ -80,6 +80,10 @@ class VideoDownloader:
                     logger.error(f"No info extracted for {video_id}")
                     return None
 
+            # Extract category (e.g. 'Gaming', 'Science & Technology', 'Entertainment')
+            categories = info.get("categories") or []
+            category = categories[0] if categories else info.get("category", "")
+
             # Find the downloaded files
             result = {
                 "video_path": self._find_video(output_dir, video_id),
@@ -88,6 +92,7 @@ class VideoDownloader:
                 "description": info.get("description", ""),
                 "title": info.get("title", ""),
                 "duration": info.get("duration", 0),
+                "category": category,
             }
 
             if not result["video_path"]:

@@ -84,6 +84,7 @@ def process_video(video: dict, config: dict, db: Database) -> bool:
         subtitle_path = dl_result.get("subtitle_path")
         thumbnail_path = dl_result.get("thumbnail_path")
         original_description = dl_result.get("description", "")
+        yt_category = dl_result.get("category", "")
 
         # Check file size limit
         max_size_bytes = dl_config.get("max_file_size_gb", 8) * 1024 * 1024 * 1024
@@ -156,6 +157,8 @@ def process_video(video: dict, config: dict, db: Database) -> bool:
             description=final_desc,
             source_url=f"https://www.youtube.com/watch?v={video_id}",
             cover_path=thumbnail_path,
+            yt_category=yt_category,
+            tid_override=video.get("tid_override"),
         )
 
         if upload_result:

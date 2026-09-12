@@ -14,10 +14,11 @@ services:
       - ./cookies.json:/app/cookies.json
     environment:
       - TZ=Europe/Madrid
-      # Ollama runs on the host; use host.docker.internal on Docker Desktop
-      # or the host's LAN IP on Linux Docker
-      - OLLAMA_HOST=http://host.docker.internal:11434
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    # The pipeline runs on cron inside the container
-    # Server operates 7am-2am, so we schedule within that window
+      # Connects directly to the Ollama container via the shared Docker network 'ai-net'
+      - OLLAMA_HOST=http://ollama:11434
+    networks:
+      - ai-net
+
+networks:
+  ai-net:
+    external: true

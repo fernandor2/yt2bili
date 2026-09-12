@@ -7,9 +7,6 @@ The biliup package (pip install biliup) bundles:
 - Python wrapper classes (BiliWeb, BiliBili, Data)
 - Rust-compiled upload engine via PyO3 (stream-gears)
 - Cookie management, CDN line selection, UPOS chunked upload
-
-This gives us native Python integration with proper exceptions
-instead of parsing subprocess stdout/stderr.
 """
 
 import logging
@@ -19,15 +16,110 @@ from biliup.plugins.bili_webup import BiliBili, Data
 
 logger = logging.getLogger("yt2bili.uploader")
 
+# Mapping of YouTube categories (English & Spanish standard labels) to Bilibili partition TIDs
+DEFAULT_CATEGORY_MAPPING = {
+    # Gaming (游戏 - 4) -> 17 (单机游戏)
+    "gaming": 17,
+    "videojuegos": 17,
+    "juegos": 17,
+    "games": 17,
+    # Science & Technology (科技 - 36) -> 188 (数码/科技)
+    "science & technology": 188,
+    "ciencia y tecnología": 188,
+    "technology": 188,
+    "tecnología": 188,
+    # Education (知识) -> 201 (科学科普)
+    "education": 201,
+    "educación": 201,
+    # Film & Animation (动画 - 1 / 影视) -> 27 (综合动画)
+    "film & animation": 27,
+    "películas y animación": 27,
+    "cine y animación": 27,
+    "animation": 27,
+    "animación": 27,
+    # Autos & Vehicles (汽车) -> 176 (汽车综合)
+    "autos & vehicles": 176,
+    "motor": 176,
+    "automóviles": 176,
+    "autos": 176,
+    # Music (音乐 - 3) -> 130 (音乐综合)
+    "music": 130,
+    "música": 130,
+    # Pets & Animals (动物圈) -> 217 (动物圈综合)
+    "pets & animals": 217,
+    "animales": 217,
+    "mascotas y animales": 217,
+    # Sports (运动) -> 234 (运动综合)
+    "sports": 234,
+    "deportes": 234,
+    # Travel & Events (出行 / 生活) -> 21 (日常)
+    "travel & events": 21,
+    "viajes y eventos": 21,
+    # People & Blogs (生活 - 160) -> 21 (日常)
+    "people & blogs": 21,
+    "gente y blogs": 21,
+    # Comedy (搞笑) -> 138 (搞笑)
+    "comedy": 138,
+    "comedia": 138,
+    "humor": 138,
+    # Entertainment (娱乐) -> 71 (娱乐综合)
+    "entertainment": 71,
+    "entretenimiento": 71,
+    # News & Politics (资讯) -> 204 (热点)
+    "news & politics": 204,
+    "noticias y política": 204,
+    # Howto & Style (手工 / 生活) -> 161 (手工)
+    "howto & style": 161,
+    "consejos y estilo": 161,
+    "bricolaje": 161,
+    # Nonprofits & Activism -> 21 (日常)
+    "nonprofits & activism": 21,
+    "ong y activismo": 21,
+}
+
 
 class BilibiliUploader:
     def __init__(self, config: dict):
-        self.tid = config.get("tid", 17)
+        self.default_tid = config.get("tid", 17)
         self.copyright = config.get("copyright", 2)
         self.tags = config.get("tags", "搬运,翻译,中文字幕")
         self.cookie_file = config.get("cookie_file", "/app/cookies.json")
         self.lines = config.get("lines", "AUTO")
         self.threads = config.get("threads", 3)
+
+        # Merge user custom category mappings from config
+        self.category_mapping = dict(DEFAULT_CATEGORY_MAPPING)
+        custom_mapping = config.get("category_mapping", {})
+        if isinstance(custom_mapping, dict):
+            for k, v in custom_mapping.items():
+                self.category_mapping[str(k).strip().lower()] = int(v)
+
+    def resolve_tid(self, yt_category: str = "", tid_override: int | None = None) -> int:
+        """
+        Determine the appropriate Bilibili TID partition:
+        1. Channel-specific override (highest priority if configured)
+        2. Direct mapping from YouTube video category
+        3. Default TID fallback from config
+        """
+        if tid_override is not None:
+            logger.info(f"Using channel TID override: {tid_override}")
+            return int(tid_override)
+
+        if yt_category:
+            normalized = yt_category.strip().lower()
+            if normalized in self.category_mapping:
+                matched_tid = self.category_mapping[normalized]
+                logger.info(
+                    f"Matched YouTube category '{yt_category}' -> Bilibili TID {matched_tid}"
+                )
+                return matched_tid
+            else:
+                logger.warning(
+                    f"YouTube category '{yt_category}' has no direct mapping. "
+                    f"Falling back to default TID {self.default_tid}"
+                )
+
+        return self.default_tid
 
     def upload(
         self,
@@ -36,6 +128,8 @@ class BilibiliUploader:
         description: str,
         source_url: str = "",
         cover_path: str | None = None,
+        yt_category: str = "",
+        tid_override: int | None = None,
     ) -> bool:
         """
         Upload a video to Bilibili using biliup's Python API directly.
@@ -46,6 +140,8 @@ class BilibiliUploader:
             description: Video description (max 2000 chars)
             source_url: Original source URL (required for copyright=2/reprint)
             cover_path: Optional path to cover image
+            yt_category: Original YouTube category string (e.g. 'Gaming', 'Science & Technology')
+            tid_override: Optional channel-specific TID override
 
         Returns:
             True if upload succeeded, False otherwise.
@@ -61,13 +157,16 @@ class BilibiliUploader:
             )
             return False
 
+        # Resolve category TID
+        tid = self.resolve_tid(yt_category=yt_category, tid_override=tid_override)
+
         # Truncate fields to Bilibili limits
         title = title[:80]
         description = description[:2000]
 
         logger.info(f"Uploading to Bilibili:")
         logger.info(f"  Title: {title}")
-        logger.info(f"  TID: {self.tid}")
+        logger.info(f"  TID: {tid} (YouTube Category: '{yt_category or 'N/A'}')")
         logger.info(f"  Tags: {self.tags}")
         logger.info(f"  Copyright: {self.copyright}")
         logger.info(f"  File: {video_path} ({os.path.getsize(video_path) / 1e6:.1f}MB)")
@@ -88,7 +187,7 @@ class BilibiliUploader:
             video.copyright = self.copyright
             if self.copyright == 2 and source_url:
                 video.source = source_url
-            video.tid = self.tid
+            video.tid = tid
             video.set_tag(self._parse_tags())
 
             # Initialize the uploader with cookie-based auth

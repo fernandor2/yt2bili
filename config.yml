@@ -8,16 +8,35 @@
 channels:
   - name: "Example Channel"
     channel_id: "UCxxxxxxxxxxxxxxxxxxxxxxxxx"
-    # Optional: override Bilibili category per channel
+    # Optional: force a specific Bilibili partition for all videos of this channel
+    # If not specified, the category is dynamically detected from each YouTube video
     # tid: 17
 
 # Bilibili upload settings
 bilibili:
-  # Category/Partition ID for uploaded videos
-  # 17 = Gaming (单机游戏), 122 = Vlog (野生技协), 21 = Daily Life (日常)
-  # 95 = Digital (数码), 207 = Science (科学科普), 138 = Pop Culture (搞笑)
-  # Full list: https://github.com/biliup/biliup-rs/blob/master/crates/biliup/src/server/template.json
+  # Default Category/Partition ID if YouTube category cannot be detected or matched
+  # 17 = Gaming (单机游戏), 188 = Tech/Digital (数码), 201 = Science/Education (科学科普)
+  # 21 = Daily Life (日常), 138 = Comedy (搞笑), 71 = Entertainment (娱乐综合)
   tid: 17
+
+  # Dynamic YouTube-to-Bilibili Category Mappings
+  # The system detects YouTube's category automatically. You can override or customize here:
+  category_mapping:
+    "Gaming": 17                  # 单机游戏
+    "Science & Technology": 188   # 科技/数码
+    "Education": 201              # 科学科普
+    "Film & Animation": 27        # 综合动画
+    "Entertainment": 71           # 娱乐综合
+    "Comedy": 138                 # 搞笑
+    "Music": 130                  # 音乐综合
+    "Sports": 234                 # 运动综合
+    "Autos & Vehicles": 176       # 汽车综合
+    "Pets & Animals": 217         # 动物圈综合
+    "Travel & Events": 21         # 日常生活
+    "People & Blogs": 21          # 日常生活
+    "Howto & Style": 161          # 手工
+    "News & Politics": 204        # 热点资讯
+
   # Copyright: 1 = original (自制), 2 = reprint (转载)
   copyright: 2
   # Tags (comma-separated, max 12)
@@ -27,8 +46,8 @@ bilibili:
 
 # Translation settings (Ollama)
 translation:
-  # Ollama API base URL (uses OLLAMA_HOST env var if set)
-  ollama_host: "http://host.docker.internal:11434"
+  # Ollama API URL: connects directly to the container 'ollama' in the 'ai-net' Docker network
+  ollama_host: "http://ollama:11434"
   # Model for translation (qwen2.5 series excels at EN→CN)
   model: "qwen2.5:7b"
   # Lines per translation batch (20-40 recommended)
@@ -45,7 +64,7 @@ subtitles:
   # Whether to burn subtitles into video (recommended for Bilibili)
   burn_in: true
   # FFmpeg encoding preset (ultrafast/superfast/veryfast/faster/fast/medium)
-  # faster = good balance of speed and quality for Ryzen 5700G
+  # 'faster' is ideal for AMD Ryzen 5700G (8 cores / 16 threads)
   ffmpeg_preset: "faster"
   # CRF quality (18-23 recommended; lower = better quality, bigger file)
   ffmpeg_crf: 20
