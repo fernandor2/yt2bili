@@ -320,7 +320,8 @@ The pipeline automatically inspects each video's native YouTube category and tra
 | **Gaming** | Single-player Games (单机游戏) | `17` |
 | **Science & Technology** | Technology & Digital (数码) | `188` |
 | **Education** | Science & Knowledge (科学科普) | `201` |
-| **Film & Animation** | Animation Comprehensive (综合动画) | `27` |
+| **Film & Animation** | Film Discussions & Theories (影视杂谈) | `182` |
+| **Animation** | Animation Comprehensive (综合动画) | `27` |
 | **Entertainment** | Entertainment Comprehensive (娱乐综合) | `71` |
 | **Comedy** | Comedy & Humor (搞笑) | `138` |
 | **Music** | Music Comprehensive (音乐综合) | `130` |

@@ -33,10 +33,15 @@ DEFAULT_CATEGORY_MAPPING = {
     # Education -> 201 (Science & Knowledge)
     "education": 201,
     "educación": 201,
-    # Film & Animation (Partition 1) -> 27 (Animation Comprehensive)
-    "film & animation": 27,
-    "películas y animación": 27,
-    "cine y animación": 27,
+    # Film & Television -> 182 (Film & TV Discussions / Movie Theories / 影视杂谈)
+    "film & animation": 182,
+    "películas y animación": 182,
+    "cine y animación": 182,
+    "film": 182,
+    "cine": 182,
+    "películas": 182,
+    "movies": 182,
+    # Animation (Partition 1) -> 27 (Animation Comprehensive)
     "animation": 27,
     "animación": 27,
     # Autos & Vehicles -> 176 (Automobiles Comprehensive)
