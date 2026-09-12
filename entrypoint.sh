@@ -23,6 +23,10 @@ if [ "$#" -gt 0 ]; then
         shift
         exec python -u /app/src/test_pipeline.py "$@"
     fi
+    if [ "$1" = "reset-db" ] || [ "$1" = "clean-db" ] || [ "$1" = "reset" ]; then
+        shift
+        exec python -u /app/src/reset_db.py "$@"
+    fi
     if [ "$1" = "biliup" ] && [ "$2" = "login" ]; then
         echo "========================================="
         echo "=== Bilibili Interactive QR Login ==="

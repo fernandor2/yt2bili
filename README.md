@@ -423,6 +423,27 @@ Run the interactive login command again:
 docker compose run --rm yt2bili biliup login
 ```
 
+### Resetting database to re-process and re-upload channels (`reset-db`)
+If you deleted your videos on Bilibili and want `yt2bili` to completely re-download, re-translate, and re-publish your channel archive from scratch:
+
+```bash
+# Complete reset: clears processed videos, reset cooldown, and clean temp downloads:
+docker compose run --rm yt2bili reset-db
+```
+*(Aliases supported: `docker compose run --rm yt2bili clean-db` or `reset`)*
+
+Optional flags for granular control:
+```bash
+# Clear only failed videos so they are retried immediately on the next cycle:
+docker compose run --rm yt2bili reset-db --failed-only
+
+# Reset only the 60-minute upload cooldown timer:
+docker compose run --rm yt2bili reset-db --cooldown-only
+
+# Clear database but preserve temporary downloaded video files:
+docker compose run --rm yt2bili reset-db --keep-downloads
+```
+
 ### Inspecting processing history and database
 To view processed video statuses directly from SQLite:
 ```bash
