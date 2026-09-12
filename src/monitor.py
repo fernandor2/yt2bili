@@ -147,11 +147,11 @@ class YouTubeMonitor:
             logger.debug(f"[{channel_name}] RSS fetch note: {e}")
         return []
 
-    def _get_video_upload_date(self, video_id: str) -> str | None:
-        """Fetch upload_date (YYYYMMDD) for a video, checking DB first, then yt-dlp metadata."""
+    def _get_video_upload_date(self, video_id: str) -> tuple[str | None, str]:
+        """Fetch upload_date (YYYYMMDD) and title for a video, checking DB first, then yt-dlp metadata."""
         cached_date = self.db.get_upload_date(video_id)
         if cached_date:
-            return cached_date
+            return cached_date, ""
 
         ydl_opts = {
             "quiet": True,
@@ -163,13 +163,14 @@ class YouTubeMonitor:
                 info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
                 if info:
                     ud = info.get("upload_date")
+                    title = info.get("title") or ""
                     if ud:
                         ud_str = str(ud)
-                        self.db.set_upload_date(video_id, ud_str)
-                        return ud_str
+                        self.db.set_upload_date(video_id, ud_str, title=title)
+                        return ud_str, title
         except Exception as e:
             logger.debug(f"Could not extract upload date for {video_id}: {e}")
-        return None
+        return None, ""
 
     def _fetch_via_ytdlp(self, channel_id: str, channel_name: str, seen_ids: set) -> list[dict]:
         """Extract regular videos and Shorts directly from the channel tabs up to max_history_days old."""
@@ -220,10 +221,11 @@ class YouTubeMonitor:
                             logger.info(f"  [{channel_name}] Reached {kind} {raw_pub}. Ending tab scan.")
                             break
 
-                        # Check or fetch upload date
+                        # Check or fetch upload date and title
                         ud = entry.get("upload_date")
+                        extracted_title = ""
                         if not ud and video_id not in seen_ids:
-                            ud = self._get_video_upload_date(video_id)
+                            ud, extracted_title = self._get_video_upload_date(video_id)
 
                         if ud:
                             if str(ud) < cutoff_date:
@@ -237,11 +239,13 @@ class YouTubeMonitor:
                             continue
                         seen_ids.add(video_id)
 
+                        item_title = entry.get("title") or extracted_title or ""
+
                         videos.append({
                             "video_id": video_id,
                             "channel_id": channel_id,
                             "channel_name": channel_name,
-                            "title": entry.get("title", ""),
+                            "title": item_title,
                             "url": f"https://www.youtube.com/watch?v={video_id}",
                             "published": str(ud or entry.get("upload_date") or ""),
                             "upload_date": str(ud or ""),

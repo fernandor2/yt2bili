@@ -375,13 +375,20 @@ class SubtitleTranslator:
         if not text or not text.strip():
             return text
 
+        # Guard: If text is a raw YouTube ID without spaces, do not attempt to translate it
+        if re.match(r"^[a-zA-Z0-9_-]{8,15}$", text.strip()):
+            logger.warning(f"translate_text received raw ID '{text}' instead of text. Skipping translation.")
+            return text
+
         system_prompt = (
-            "You are a professional translator. Translate the following text (Spanish or English) "
-            "to natural Simplified Chinese (简体中文). Return ONLY the translation, "
-            "nothing else. Keep it concise and natural."
+            "You are a professional translator. Translate the given text (Spanish or English) "
+            "into natural Simplified Chinese (简体中文).\n"
+            "Rules:\n"
+            "1. Output ONLY the direct Chinese translation, without explanations, quotes, or notes.\n"
+            "2. Never output meta-commentary, explanations, or notes about the input."
         )
 
-        user_prompt = f"Context: {context}\n\nTranslate:\n{text}" if context else text
+        user_prompt = f"Translate this {context} to Simplified Chinese:\n{text}" if context else text
 
         payload = {
             "model": self.model,
@@ -399,7 +406,14 @@ class SubtitleTranslator:
             data = response.json()
             result = data["message"]["content"].strip()
             # Remove any surrounding quotes the LLM might add
-            result = result.strip('"').strip("'").strip('"').strip('"')
+            result = result.strip('"').strip("'").strip('“').strip('”')
+
+            # Filter out meta-explanations from LLM if it refused to translate
+            meta_phrases = ["上下文标识符", "没有实际文字内容", "无法翻译", "作为人工智能", "as an ai", "i cannot translate"]
+            if any(phrase in result.lower() for phrase in meta_phrases):
+                logger.warning(f"LLM returned meta-explanation instead of translation ('{result}'). Falling back to original.")
+                return text
+
             return result
         except Exception as e:
             logger.error(f"Text translation failed: {e}. Returning original.")

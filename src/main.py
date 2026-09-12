@@ -104,6 +104,12 @@ def process_video(video: dict, config: dict, db: Database) -> bool:
         original_description = dl_result.get("description", "")
         yt_category = dl_result.get("category", "")
 
+        # Ensure we always use the authoritative title from YouTube downloader
+        dl_title = dl_result.get("title")
+        if dl_title and dl_title.strip():
+            title = dl_title.strip()
+            db.update_title(video_id, title)
+
         # Check file size limit
         max_size_bytes = dl_config.get("max_file_size_gb", 8) * 1024 * 1024 * 1024
         if os.path.getsize(video_path) > max_size_bytes:
@@ -146,8 +152,12 @@ def process_video(video: dict, config: dict, db: Database) -> bool:
         # Bilibili title max 80 chars; keep original if translation too long
         if len(zh_title) > 75:
             zh_title = zh_title[:75] + "..."
-        # Combine: Chinese title【Original title】
-        final_title = f"{zh_title}【{title}】"
+        # Combine: Chinese title【Original title】 (skip brackets if title is empty or identical to ID)
+        if title and title != video_id:
+            final_title = f"{zh_title}【{title}】"
+        else:
+            final_title = zh_title
+
         if len(final_title) > 80:
             final_title = zh_title[:80]
 

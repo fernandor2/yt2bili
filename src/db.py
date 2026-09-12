@@ -90,12 +90,29 @@ class Database:
                 INSERT INTO processed_videos (video_id, channel_id, channel_name, title, upload_date, status)
                 VALUES (?, ?, ?, ?, ?, 'pending')
                 ON CONFLICT(video_id) DO UPDATE SET
+                    channel_id = COALESCE(NULLIF(excluded.channel_id, ''), channel_id),
                     channel_name = COALESCE(NULLIF(excluded.channel_name, ''), channel_name),
+                    title = COALESCE(NULLIF(excluded.title, ''), title),
                     upload_date = COALESCE(NULLIF(excluded.upload_date, ''), upload_date),
                     status = CASE WHEN status = 'done' THEN 'done' ELSE 'pending' END,
                     updated_at = datetime('now')
                 """,
                 (video_id, channel_id, channel_name, title, upload_date),
+            )
+            conn.commit()
+
+    def update_title(self, video_id: str, title: str):
+        """Update or fix the title of a video in SQLite."""
+        if not title:
+            return
+        with self._get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE processed_videos
+                SET title = ?, updated_at = datetime('now')
+                WHERE video_id = ?
+                """,
+                (title, video_id),
             )
             conn.commit()
 
@@ -123,16 +140,18 @@ class Database:
             ).fetchone()
             return row["upload_date"] if row and row["upload_date"] else None
 
-    def set_upload_date(self, video_id: str, upload_date: str):
-        """Cache upload_date for a video."""
+    def set_upload_date(self, video_id: str, upload_date: str, title: str = ""):
+        """Cache upload_date and title for a video."""
         with self._get_conn() as conn:
             conn.execute(
                 """
-                INSERT INTO processed_videos (video_id, upload_date, status)
-                VALUES (?, ?, 'pending')
-                ON CONFLICT(video_id) DO UPDATE SET upload_date = excluded.upload_date
+                INSERT INTO processed_videos (video_id, upload_date, title, status)
+                VALUES (?, ?, ?, 'pending')
+                ON CONFLICT(video_id) DO UPDATE SET
+                    upload_date = excluded.upload_date,
+                    title = COALESCE(NULLIF(excluded.title, ''), title)
                 """,
-                (video_id, upload_date),
+                (video_id, upload_date, title),
             )
             conn.commit()
 
