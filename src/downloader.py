@@ -5,9 +5,10 @@ Uses curl-cffi for Chrome TLS impersonation to prevent YouTube 429 rate limits a
 Decouples subtitle downloading from video downloading so subtitle errors never abort the video pipeline.
 """
 
+import glob
 import logging
 import os
-import glob
+import re
 import yt_dlp
 
 logger = logging.getLogger("yt2bili.downloader")
@@ -194,6 +195,14 @@ class VideoDownloader:
             logger.error(f"Video file not found in output directory {output_dir}")
             return None
 
+        # Extract YouTube tags and hashtags from title/description
+        raw_tags = list(info.get("tags") or [])
+        text_for_tags = f"{info.get('title', '')} {info.get('description', '')}"
+        hashtags = re.findall(r"#([a-zA-Z0-9_\u4e00-\u9fff\u00C0-\u017F]+)", text_for_tags)
+        for ht in hashtags:
+            if ht.lower() not in [t.lower() for t in raw_tags] and ht.lower() not in ["shorts", "short"]:
+                raw_tags.append(ht)
+
         return {
             "video_path": video_path,
             "thumbnail_path": thumbnail_path,
@@ -201,6 +210,7 @@ class VideoDownloader:
             "title": info.get("title", ""),
             "duration": info.get("duration", 0),
             "category": category,
+            "tags": raw_tags,
         }
 
     def _find_video(self, output_dir: str, video_id: str) -> str | None:

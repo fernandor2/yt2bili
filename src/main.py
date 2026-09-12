@@ -187,6 +187,14 @@ def process_video(video: dict, config: dict, db: Database) -> bool:
         desc_parts.append(attribution)
         final_desc = "".join(desc_parts)[:2000]
 
+        # Translate YouTube tags into Chinese for Bilibili SEO
+        yt_tags = dl_result.get("tags", [])
+        if yt_tags:
+            logger.info(f"Translating {len(yt_tags)} YouTube tags into Chinese for Bilibili...")
+            zh_tags = translator.translate_tags(yt_tags)
+        else:
+            zh_tags = []
+
         # ── Step 4: Burn subtitles into video ──
         if translated_sub_path and sub_config.get("burn_in", True):
             logger.info("[4/5] Burning Chinese subtitles into video...")
@@ -210,6 +218,7 @@ def process_video(video: dict, config: dict, db: Database) -> bool:
             cover_path=thumbnail_path,
             yt_category=yt_category,
             tid_override=video.get("tid_override"),
+            tags=zh_tags,
         )
 
         if upload_result:
@@ -253,9 +262,10 @@ def main():
     db = Database(config["pipeline"]["db_path"])
     monitor = YouTubeMonitor(config)
 
-    # 1. Check all monitored channels via RSS (discovers & marks new videos as pending)
-    new_videos = monitor.check_all_channels()
-    logger.info(f"Found {len(new_videos)} candidate video(s) from RSS feed")
+    # 1. Scan all channels for videos/shorts from the last 90 days and queue in SQLite
+    discovered = monitor.check_all_channels()
+    if discovered:
+        logger.info(f"Discovered and queued {len(discovered)} new video(s) into database")
 
     # 2. Check Bilibili upload cooldown (prevents anti-spam rate limiting)
     cooldown_minutes = config.get("pipeline", {}).get("upload_cooldown_minutes", 60)
@@ -273,28 +283,39 @@ def main():
         )
         return
 
-    if not new_videos:
-        logger.info("No new videos. Pipeline complete.")
+    # 3. Pull pending videos from the SQLite queue
+    pending_videos = db.get_pending_videos(limit=20)
+    if not pending_videos:
+        logger.info("No pending videos in database queue. Pipeline complete.")
         return
 
-    # 3. Process candidate videos respecting upload limit per cycle
+    logger.info(
+        f"Database queue contains {len(pending_videos)} pending video(s). "
+        f"Processing 1 by 1 (limit: {max_uploads_per_run} per run)..."
+    )
+
     success_count = 0
-    for video in new_videos:
+    for video in pending_videos:
         video_id = video["video_id"]
 
         # Skip if already processed or recently failed
         if db.is_processed(video_id):
-            logger.info(f"Skipping {video_id} (already processed)")
+            logger.info(f"Skipping {video_id} (already marked done)")
             continue
 
         if db.is_recently_failed(video_id, hours=24):
             logger.info(f"Skipping {video_id} (failed within 24h, will retry later)")
             continue
 
+        # Look up channel override if available
+        channel_id = video.get("channel_id")
+        for ch in config.get("channels", []):
+            if ch.get("channel_id") == channel_id:
+                video["tid_override"] = ch.get("tid")
+                break
+
         if process_video(video, config, db):
             success_count += 1
-
-            # Enforce max uploads per run to space out uploads over time
             if success_count >= max_uploads_per_run:
                 logger.info(
                     f"Reached max uploads limit for this run ({max_uploads_per_run}). "
@@ -302,7 +323,6 @@ def main():
                 )
                 break
 
-        # Brief pause between videos
         time.sleep(5)
 
     logger.info(f"Pipeline run finished: {success_count} video(s) uploaded successfully")

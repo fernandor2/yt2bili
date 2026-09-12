@@ -33,12 +33,13 @@ Engineered specifically for local mini-PC servers (such as AMD Ryzen 5700G, 32GB
 
 ## 🌟 Key Features
 
-1. **Unfiltered YouTube Monitoring:**
-   - Polls official YouTube Atom/RSS feeds every 30 minutes without API keys or quota consumption.
-   - Ingests both standard widescreen videos and vertical Shorts without duration constraints.
-2. **Local LLM Subtitle Translation (Ollama):**
+1. **90-Day YouTube Archive Scanning & Queuing:**
+   - Instead of fetching only the 15 newest items from RSS, yt-dlp scans both `/videos` and `/shorts` across the configured lookback window (default: 90 days).
+   - All newly discovered videos and vertical Shorts from the last 90 days are safely queued in SQLite (`processed_videos`) and processed smoothly **1 by 1** respecting the upload cooldown.
+2. **Local LLM Subtitle Translation (Ollama) & Tag Translation:**
    - Batches subtitles (15 lines per call) with a sliding context window for natural Chinese phrasing.
    - Decoupled from timestamps, auto-cleans YouTube VTT karaoke tags and progressive recognition overlaps.
+   - Translates original YouTube tags and hashtags into Chinese SEO tags for Bilibili discovery.
    - Uses `qwen2.5:14b`, the premier open-weights model for English/Spanish to Chinese translation.
 3. **Hardcoded Subtitles with Opaque Box (`BorderStyle=3`):**
    - Automatically overlays a solid black background box (`&H00000000`) behind the Chinese characters.
@@ -48,11 +49,12 @@ Engineered specifically for local mini-PC servers (such as AMD Ryzen 5700G, 32GB
    - If a YouTube video lacks manual or auto-generated captions, the pipeline calls your standalone `whisper` container on `ai-net` (`http://whisper:8000/v1/audio/transcriptions`).
    - Powered by `large-v3-turbo` for state-of-the-art accuracy in both Spanish and English.
    - Fully compatible with n8n workflows through the standard OpenAI Audio API format.
-5. **Dynamic Category Detection:**
-   - Detects the video's native category on YouTube and maps it to the corresponding Bilibili partition TID (Gaming, Tech, Science, Entertainment, etc.).
-6. **Anti-Spam Upload Cooldown (60 Minutes):**
+5. **Dynamic Category Detection & Tag Localization:**
+   - Detects the video's native category on YouTube and maps it to the corresponding Bilibili partition TID.
+   - Extracts YouTube tags and hashtags, translates them into Chinese, and attaches them to the upload.
+6. **Anti-Spam Upload Cooldown (60 Minutes) & 1-by-1 Queue Processing:**
    - Enforces a minimum 60-minute interval between consecutive uploads to prevent Bilibili risk control triggers (error code `21070`).
-   - Limits processing to 1 video per run, gracefully queueing surplus videos in SQLite.
+   - Limits processing to 1 video per run, queueing backlog videos in SQLite and processing them 1 by 1 across cycles.
 7. **Docker Network Integration (`ai-net`):**
    - Directly attaches to the existing external Docker network `ai-net` to reach Ollama at `http://ollama:11434` and Whisper at `http://whisper:8000`.
 8. **Server Operating Schedule (7:00 AM – 2:00 AM):**
@@ -387,11 +389,11 @@ bilibili:
 translation:
   ollama_host: "http://ollama:11434" # Ollama endpoint in ai-net
   model: "qwen2.5:14b" # Model identifier
-  batch_size: 30 # Lines translated per LLM prompt
+  batch_size: 15 # Lines translated per LLM prompt (optimal for 14B on CPU)
   temperature: 0.3 # Generation temperature
 
 subtitles:
-  source_langs: ["en.*", "es.*", "en", "es"]
+  source_langs: ["es-orig", "es", "en-orig", "en"]
   burn_in: true # Burn hardsubs into video
   border_style: 3 # 3 = Opaque background box (covers existing subs)
   box_padding: 4 # Box padding in pixels
@@ -403,7 +405,8 @@ subtitles:
 
 pipeline:
   upload_cooldown_minutes: 60 # Cooldown between uploads (minutes)
-  max_uploads_per_run: 1 # Maximum uploads per cycle
+  max_uploads_per_run: 1 # Maximum uploads per cycle (processes 1 by 1)
+  max_history_days: 90 # Lookback window in days to scan channel archive
   download_dir: "/app/data/downloads"
   db_path: "/app/data/db/processed.db"
   cleanup_after_upload: true # Delete downloaded video after upload

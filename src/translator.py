@@ -404,3 +404,60 @@ class SubtitleTranslator:
         except Exception as e:
             logger.error(f"Text translation failed: {e}. Returning original.")
             return text
+
+    def translate_tags(self, tags: list[str]) -> list[str]:
+        """
+        Translate a list of YouTube tags/keywords into natural Simplified Chinese tags
+        suitable for Bilibili video publishing (max 10-12 tags).
+        """
+        if not tags:
+            return []
+
+        # Take up to 10 tags to keep prompt concise
+        sample_tags = [t.strip() for t in tags[:10] if t.strip()]
+        if not sample_tags:
+            return []
+
+        system_prompt = (
+            "You are an expert in Bilibili video metadata and SEO keywords.\n"
+            "Translate these YouTube tags/keywords into natural Simplified Chinese tags (简体中文).\n"
+            "Guidelines:\n"
+            "1. Translate character/franchise/brand/game/film names into their standard Chinese names "
+            "(e.g., Lightning McQueen -> 闪电麦昆, Cars -> 赛车总动员, Pixar -> 皮克斯).\n"
+            "2. Keep well-known original English names if commonly searched as-is on Bilibili (e.g. Disney, Pixar).\n"
+            "3. Return ONLY a comma-separated list of tags, without explanation, numbers, or markdown."
+        )
+
+        user_prompt = f"Translate these tags to Chinese:\n{', '.join(sample_tags)}"
+
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "stream": False,
+            "options": {"temperature": self.temperature},
+        }
+
+        try:
+            response = requests.post(self.api_url, json=payload, timeout=120)
+            response.raise_for_status()
+            data = response.json()
+            content = data["message"]["content"].strip()
+            # Split by comma (standard, Chinese comma, or newlines)
+            raw_tokens = re.split(r"[,，、\n]+", content)
+            translated_tags = []
+            for token in raw_tokens:
+                clean_tag = re.sub(r"[#\"'“”]", "", token).strip()
+                if clean_tag and len(clean_tag) <= 20 and clean_tag not in translated_tags:
+                    translated_tags.append(clean_tag)
+            return translated_tags[:10]
+        except Exception as e:
+            logger.warning(f"Tags translation failed ({e}). Using raw sanitized tags.")
+            sanitized = []
+            for t in sample_tags:
+                clean_t = re.sub(r"[#\"'“”]", "", t).strip()
+                if clean_t and len(clean_t) <= 20 and clean_t not in sanitized:
+                    sanitized.append(clean_t)
+            return sanitized[:8]

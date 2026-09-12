@@ -149,7 +149,17 @@ def run_test(video_id: str, no_upload: bool = False, keep_temp: bool = False):
     zh_desc = translator.translate_text(narrative_text, context="video description") if narrative_text else title
     final_desc = f"{zh_desc}\n\nOriginal: {title}\nSource: https://www.youtube.com/watch?v={video_id}"
 
+    # Translate YouTube tags into Chinese for Bilibili SEO
+    yt_tags = dl_result.get("tags", [])
+    if yt_tags:
+        logger.info(f"Translating {len(yt_tags)} YouTube tags into Chinese for Bilibili...")
+        zh_tags = translator.translate_tags(yt_tags)
+    else:
+        zh_tags = []
+
     logger.info(f"✅ Chinese Title: {final_title}")
+    if zh_tags:
+        logger.info(f"✅ Translated Tags: {', '.join(zh_tags)}")
 
     # ── Step 4: Burn Subtitles ──
     final_video_path = os.path.join(test_base_dir, f"test_{video_id}_zh.mp4")
@@ -181,6 +191,7 @@ def run_test(video_id: str, no_upload: bool = False, keep_temp: bool = False):
             cover_path=thumbnail_path,
             yt_category=category,
             draft=True,
+            tags=zh_tags,
         )
         if success:
             logger.info("=" * 60)

@@ -11,6 +11,7 @@ The biliup package (pip install biliup) bundles:
 
 import logging
 import os
+import re
 import time
 
 from biliup.plugins.bili_webup import BiliBili, Data
@@ -146,6 +147,7 @@ class BilibiliUploader:
         yt_category: str = "",
         tid_override: int | None = None,
         draft: bool = False,
+        tags: list[str] | str | None = None,
     ) -> bool:
         """
         Upload a video to Bilibili using biliup's Python API directly.
@@ -159,6 +161,7 @@ class BilibiliUploader:
             yt_category: Original YouTube category string (e.g. 'Gaming', 'Science & Technology')
             tid_override: Optional channel-specific TID override
             draft: If True, schedule publication 7 days ahead (unlisted draft in Creator Center)
+            tags: Video-specific tags (translated from YouTube tags)
 
         Returns:
             True if upload succeeded, False otherwise.
@@ -185,10 +188,12 @@ class BilibiliUploader:
         title = title[:80]
         description = description[:2000]
 
+        final_tags = self._parse_tags(tags)
+
         logger.info(f"Uploading to Bilibili{' [DRAFT MODE]' if draft else ''}:")
         logger.info(f"  Title: {title}")
         logger.info(f"  TID: {tid} (YouTube Category: '{yt_category or 'N/A'}')")
-        logger.info(f"  Tags: {self.tags}")
+        logger.info(f"  Tags: {', '.join(final_tags)}")
         logger.info(f"  Copyright: {self.copyright}")
         logger.info(f"  File: {video_path} ({os.path.getsize(video_path) / 1e6:.1f}MB)")
         logger.info(f"  Line: {self.lines}, Threads: {self.threads}")
@@ -210,7 +215,7 @@ class BilibiliUploader:
             if self.copyright == 2 and source_url:
                 video.source = source_url
             video.tid = tid
-            video.set_tag(self._parse_tags())
+            video.set_tag(final_tags)
 
             if draft:
                 # Schedule publication 7 days in the future (unlisted draft in creator center)
@@ -267,11 +272,27 @@ class BilibiliUploader:
             logger.exception(f"Upload error: {e}")
             return False
 
-    def _parse_tags(self) -> list[str]:
-        """Parse comma-separated tags string into a list."""
-        if isinstance(self.tags, list):
-            return self.tags
-        return [t.strip() for t in self.tags.split(",") if t.strip()]
+    def _parse_tags(self, extra_tags: list[str] | str | None = None) -> list[str]:
+        """
+        Merge base channel tags with extra tags (from YouTube translation).
+        Returns up to 12 deduplicated tags with max 20 chars per tag.
+        """
+        base = self.tags if isinstance(self.tags, list) else [t.strip() for t in str(self.tags).split(",") if t.strip()]
+
+        extras = []
+        if isinstance(extra_tags, list):
+            extras = [t.strip() for t in extra_tags if t.strip()]
+        elif isinstance(extra_tags, str) and extra_tags.strip():
+            extras = [t.strip() for t in re.split(r"[,，、]+", extra_tags) if t.strip()]
+
+        # Combine: extra tags first (specific to video), followed by base tags (e.g. 原创, 翻译, 中文字幕)
+        combined = []
+        for tag in extras + base:
+            clean = re.sub(r"[#\"'“”]", "", tag).strip()
+            if clean and len(clean) <= 20 and clean not in combined:
+                combined.append(clean)
+
+        return combined[:12]
 
     def check_auth(self) -> bool:
         """Verify that the cookie file exists and is loadable."""

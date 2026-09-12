@@ -1,13 +1,15 @@
 """
 YouTube channel monitor.
-Fetches recent videos (including Shorts) with automatic fallback to yt-dlp flat playlist extraction
-when YouTube's legacy RSS server returns 404 or invalid HTML.
+Fetches all videos and Shorts uploaded within the configured lookback window (default: 90 days),
+merging RSS feeds with yt-dlp flat playlist extraction to queue up candidates in SQLite.
 """
 
 import logging
-import requests
-import feedparser
+import re
 import time
+from datetime import datetime, timedelta
+import feedparser
+import requests
 import yt_dlp
 
 from db import Database
@@ -19,13 +21,16 @@ RSS_BASE_URL = "https://www.youtube.com/feeds/videos.xml?channel_id={}"
 
 class YouTubeMonitor:
     def __init__(self, config: dict):
+        self.config = config
         self.channels = config.get("channels", [])
         self.db = Database(config["pipeline"]["db_path"])
+        self.max_history_days = config.get("pipeline", {}).get("max_history_days", 90)
 
     def check_all_channels(self) -> list[dict]:
         """
-        Check all configured channels for new videos.
-        Returns a list of video dicts not yet in the database.
+        Check all configured channels for videos/shorts from the last N days (default 90).
+        Discovers new videos and records them in SQLite as 'pending'.
+        Returns list of newly discovered videos.
         """
         all_new = []
 
@@ -40,80 +45,96 @@ class YouTubeMonitor:
                 for video in videos:
                     vid = video["video_id"]
                     if not self.db.is_processed(vid):
-                        # Attach channel-specific overrides
                         video["tid_override"] = channel.get("tid")
                         new_videos.append(video)
-                        # Mark as pending
+                        # Record in SQLite queue as pending
                         self.db.mark_pending(vid, channel_id, video["title"])
 
                 if new_videos:
                     logger.info(
-                        f"[{channel_name}] {len(new_videos)} new video(s) found"
+                        f"[{channel_name}] Found {len(new_videos)} candidate video(s) within the last {self.max_history_days} days"
                     )
                 else:
-                    logger.info(f"[{channel_name}] No new videos")
+                    logger.info(f"[{channel_name}] No new videos to queue (all processed or up to date)")
 
                 all_new.extend(new_videos)
 
             except Exception as e:
                 logger.error(f"Error checking channel {channel_name}: {e}")
 
-            # Brief pause between channel checks
             time.sleep(2)
 
         return all_new
 
     def _fetch_channel_videos(self, channel_id: str, channel_name: str) -> list[dict]:
         """
-        Attempt to fetch recent uploads via RSS feed.
-        If YouTube's RSS server returns 404 or invalid HTML, automatically fall back to
-        yt-dlp flat extraction (Innertube API).
+        Fetch all regular videos and Shorts from the last N days.
+        Combines RSS feed (fresh items) and yt-dlp tab extraction (/videos + /shorts).
         """
-        url = RSS_BASE_URL.format(channel_id)
-        logger.info(f"Checking channel [{channel_name}]...")
+        seen_ids = set()
+        videos = []
 
+        # 1. Quick RSS scan (up to 15 recent items with full descriptions)
+        rss_videos = self._fetch_via_rss(channel_id, channel_name)
+        for v in rss_videos:
+            seen_ids.add(v["video_id"])
+            videos.append(v)
+
+        # 2. Comprehensive yt-dlp scan across /videos and /shorts for 90-day archive
+        ytdlp_videos = self._fetch_via_ytdlp(channel_id, channel_name, seen_ids)
+        videos.extend(ytdlp_videos)
+
+        logger.info(
+            f"[{channel_name}] Total candidate videos & shorts from last {self.max_history_days} days: {len(videos)}"
+        )
+        return videos
+
+    def _fetch_via_rss(self, channel_id: str, channel_name: str) -> list[dict]:
+        """Attempt to fetch recent uploads via RSS feed."""
+        url = RSS_BASE_URL.format(channel_id)
         try:
             resp = requests.get(
                 url,
                 headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
                 timeout=10,
             )
-
-            # Check if RSS actually returned a valid XML feed and not Google's HTML 404 page
             if resp.status_code == 200 and (b"<?xml" in resp.content[:100] or b"<feed" in resp.content[:200]):
                 feed = feedparser.parse(resp.content)
                 if feed.entries:
-                    videos = []
+                    cutoff_dt = datetime.utcnow() - timedelta(days=self.max_history_days)
+                    results = []
                     for entry in feed.entries:
                         video_id = entry.get("yt_videoid", "")
                         if not video_id:
                             continue
-                        videos.append({
+
+                        # Check published date if available
+                        pub_str = entry.get("published", "")
+                        if pub_str:
+                            try:
+                                dt = datetime.fromisoformat(pub_str.replace("Z", "+00:00"))
+                                if dt.replace(tzinfo=None) < cutoff_dt:
+                                    continue
+                            except Exception:
+                                pass
+
+                        results.append({
                             "video_id": video_id,
                             "channel_id": channel_id,
                             "channel_name": channel_name,
                             "title": entry.get("title", ""),
                             "url": f"https://www.youtube.com/watch?v={video_id}",
-                            "published": entry.get("published", ""),
+                            "published": pub_str,
                             "description": _get_description(entry),
                             "thumbnail": _get_thumbnail(entry),
                         })
-                    logger.info(f"[{channel_name}] Found {len(videos)} video(s) via RSS")
-                    return videos
-
-            logger.info(
-                f"[{channel_name}] YouTube RSS feed returned status {resp.status_code}. "
-                f"Scanning channel directly via yt-dlp..."
-            )
-
+                    return results
         except Exception as e:
-            logger.info(f"[{channel_name}] RSS unavailable ({e}). Scanning via yt-dlp...")
+            logger.debug(f"[{channel_name}] RSS fetch note: {e}")
+        return []
 
-        # ── Bulletproof Fallback: yt-dlp Flat Playlist Extraction ──
-        return self._fetch_via_ytdlp(channel_id, channel_name)
-
-    def _fetch_via_ytdlp(self, channel_id: str, channel_name: str) -> list[dict]:
-        """Extract the latest regular videos AND Shorts directly from the channel page using yt-dlp."""
+    def _fetch_via_ytdlp(self, channel_id: str, channel_name: str, seen_ids: set) -> list[dict]:
+        """Extract regular videos and Shorts directly from the channel tabs up to max_history_days old."""
         endpoints = [
             (f"https://www.youtube.com/channel/{channel_id}/videos", "videos"),
             (f"https://www.youtube.com/channel/{channel_id}/shorts", "shorts"),
@@ -121,16 +142,18 @@ class YouTubeMonitor:
 
         ydl_opts = {
             "extract_flat": "in_playlist",
-            "playlist_end": 15,
+            "playlist_end": 150,  # Deep enough to capture the full 90-day archive
             "quiet": True,
             "no_warnings": True,
         }
 
+        cutoff_ts = time.time() - (self.max_history_days * 86400)
+        cutoff_date = (datetime.utcnow() - timedelta(days=self.max_history_days)).strftime("%Y%m%d")
+
         videos = []
-        seen_ids = set()
 
         for url, kind in endpoints:
-            logger.info(f"Scanning {kind}: {url}...")
+            logger.info(f"Scanning {kind} tab for [{channel_name}] (up to {self.max_history_days} days)...")
             try:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     res = ydl.extract_info(url, download=False)
@@ -140,24 +163,48 @@ class YouTubeMonitor:
                         if not entry:
                             continue
                         video_id = entry.get("id")
-                        if not video_id or video_id in seen_ids:
+                        if not video_id:
+                            continue
+
+                        # Check date boundaries to stop scanning when reaching older content
+                        ts = entry.get("timestamp")
+                        if ts and ts < cutoff_ts:
+                            logger.info(f"  [{channel_name}] Reached {kind} older than {self.max_history_days} days. Ending tab scan.")
+                            break
+
+                        ud = entry.get("upload_date")
+                        if ud and str(ud) < cutoff_date:
+                            logger.info(f"  [{channel_name}] Reached {kind} date {ud} older than {self.max_history_days} days. Ending tab scan.")
+                            break
+
+                        raw_pub = str(entry.get("published_time") or entry.get("published") or "").lower()
+                        if "year" in raw_pub or "año" in raw_pub:
+                            logger.info(f"  [{channel_name}] Reached {kind} from last year ({raw_pub}). Ending tab scan.")
+                            break
+                        month_match = re.search(r"(\d+)\s*(?:month|mes)", raw_pub)
+                        if month_match and int(month_match.group(1)) > (self.max_history_days // 30):
+                            logger.info(f"  [{channel_name}] Reached {kind} {raw_pub}. Ending tab scan.")
+                            break
+
+                        if video_id in seen_ids:
                             continue
                         seen_ids.add(video_id)
+
                         videos.append({
                             "video_id": video_id,
                             "channel_id": channel_id,
                             "channel_name": channel_name,
                             "title": entry.get("title", ""),
                             "url": f"https://www.youtube.com/watch?v={video_id}",
-                            "published": "",
+                            "published": str(entry.get("upload_date") or ""),
                             "description": entry.get("description", ""),
                             "thumbnail": entry.get("thumbnails", [{}])[-1].get("url", "") if entry.get("thumbnails") else "",
                             "is_short": (kind == "shorts"),
                         })
-            except Exception as e:
-                logger.warning(f"[{channel_name}] Failed to scan {kind} tab ({url}): {e}")
 
-        logger.info(f"[{channel_name}] Total found: {len(videos)} video(s) and Shorts via yt-dlp")
+            except Exception as e:
+                logger.warning(f"[{channel_name}] Could not scan {kind} tab ({url}): {e}")
+
         return videos
 
 
