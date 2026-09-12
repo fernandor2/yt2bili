@@ -11,6 +11,7 @@ import re
 import shutil
 import sys
 import time
+from datetime import datetime
 import yaml
 
 from db import Database
@@ -21,11 +22,18 @@ from burner import SubtitleBurner
 from uploader import BilibiliUploader
 from whisper_client import WhisperClient
 
+log_handlers = [logging.StreamHandler(sys.stdout)]
+try:
+    os.makedirs("/app/data", exist_ok=True)
+    log_handlers.append(logging.FileHandler("/app/data/pipeline.log", encoding="utf-8"))
+except Exception:
+    pass
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[logging.StreamHandler(sys.stdout)],
+    handlers=log_handlers,
 )
 logger = logging.getLogger("yt2bili")
 
@@ -272,14 +280,13 @@ def _cleanup(download_dir: str, dl_config: dict):
             logger.warning(f"Cleanup error: {e}")
 
 
-def main():
-    """Main pipeline entry point."""
+def run_pipeline_cycle(config: dict) -> int:
+    """Run a single check and upload cycle. Returns number of videos uploaded."""
     logger.info("=" * 60)
-    logger.info("yt2bili Pipeline Run Starting")
+    logger.info("yt2bili Pipeline Check Starting")
     logger.info(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info("=" * 60)
 
-    config = load_config()
     db = Database(config["pipeline"]["db_path"])
     monitor = YouTubeMonitor(config)
 
@@ -302,13 +309,13 @@ def main():
             f"Need to wait {remaining_min}m {remaining_sec}s more (cooldown: {cooldown_minutes}m). "
             f"Pending videos will be uploaded in subsequent cycles."
         )
-        return
+        return 0
 
     # 3. Pull pending videos from the SQLite queue
     pending_videos = db.get_pending_videos(limit=20)
     if not pending_videos:
-        logger.info("No pending videos in database queue. Pipeline complete.")
-        return
+        logger.info("No pending videos in database queue. Pipeline cycle complete.")
+        return 0
 
     logger.info(
         f"Database queue contains {len(pending_videos)} pending video(s). "
@@ -348,7 +355,61 @@ def main():
 
         time.sleep(5)
 
-    logger.info(f"Pipeline run finished: {success_count} video(s) uploaded successfully")
+    logger.info(f"Pipeline check finished: {success_count} video(s) uploaded successfully")
+    return success_count
+
+
+def is_within_active_hours() -> bool:
+    """
+    Check if current local time is within operating hours (07:00 to 02:00).
+    During 02:00 to 07:00, the pipeline remains idle.
+    """
+    current_hour = datetime.now().hour
+    return current_hour not in [2, 3, 4, 5, 6]
+
+
+def run_daemon(config: dict):
+    """Run pipeline continuously in the foreground with live logs streamed to docker."""
+    interval_min = config.get("pipeline", {}).get("check_interval_minutes", 30)
+    logger.info("=" * 60)
+    logger.info("🔄 yt2bili Continuous Daemon Active")
+    logger.info(f"   Check interval: {interval_min} minutes")
+    logger.info("   Active operating hours: 07:00 - 02:00")
+    logger.info("   All execution logs stream live to Docker output.")
+    logger.info("=" * 60)
+
+    # Initial check upon container start
+    try:
+        if is_within_active_hours():
+            run_pipeline_cycle(config)
+        else:
+            logger.info("🌙 Starting outside active hours (07:00 - 02:00). Initial check skipped.")
+    except Exception as e:
+        logger.exception(f"Error in initial pipeline cycle: {e}")
+
+    while True:
+        logger.info(f"⏳ Sleeping for {interval_min} minutes until next scheduled check...")
+        time.sleep(interval_min * 60)
+
+        if not is_within_active_hours():
+            logger.info(
+                f"🌙 Current hour ({datetime.now().strftime('%H:%M')}) is outside active hours (07:00 - 02:00). "
+                f"Will check again in {interval_min} minutes."
+            )
+            continue
+
+        try:
+            run_pipeline_cycle(config)
+        except Exception as e:
+            logger.exception(f"Error in scheduled pipeline cycle: {e}")
+
+
+def main():
+    config = load_config()
+    if "--loop" in sys.argv or "--daemon" in sys.argv:
+        run_daemon(config)
+    else:
+        run_pipeline_cycle(config)
 
 
 if __name__ == "__main__":

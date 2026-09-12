@@ -125,6 +125,9 @@ pipeline:
   # Keeping this at 1 smoothly distributes uploads across the schedule without burst flooding.
   max_uploads_per_run: 1
 
+  # Interval in minutes between background checks when running in continuous daemon mode
+  check_interval_minutes: 30
+
   # Number of days of channel history to scan and queue for processing (videos + Shorts)
   max_history_days: 90
 
