@@ -39,14 +39,18 @@ Engineered specifically for local mini-PC servers (such as AMD Ryzen 5700G, 32GB
    - Automatically overlays a solid black background box (`&H00000000`) behind the Chinese characters.
    - Completely covers and replaces any pre-existing burned-in subtitles present in the source video.
    - Audio is copied losslessly (`-c:a copy`) to preserve original audio fidelity.
-4. **Dynamic Category Detection:**
+4. **Standalone Whisper STT Fallback (Shared with n8n):**
+   - If a YouTube video lacks manual or auto-generated captions, the pipeline calls your standalone `whisper` container on `ai-net` (`http://whisper:8000/v1/audio/transcriptions`).
+   - Powered by `large-v3-turbo` for state-of-the-art accuracy in both Spanish and English.
+   - Fully compatible with n8n workflows through the standard OpenAI Audio API format.
+5. **Dynamic Category Detection:**
    - Detects the video's native category on YouTube and maps it to the corresponding Bilibili partition TID (Gaming, Tech, Science, Entertainment, etc.).
-5. **Anti-Spam Upload Cooldown (60 Minutes):**
+6. **Anti-Spam Upload Cooldown (60 Minutes):**
    - Enforces a minimum 60-minute interval between consecutive uploads to prevent Bilibili risk control triggers (error code `21070`).
    - Limits processing to 1 video per run, gracefully queueing surplus videos in SQLite.
-6. **Docker Network Integration (`ai-net`):**
-   - Directly attaches to the existing external Docker network `ai-net` to reach Ollama at `http://ollama:11434` without host port routing.
-7. **Server Operating Schedule (7:00 AM – 2:00 AM):**
+7. **Docker Network Integration (`ai-net`):**
+   - Directly attaches to the existing external Docker network `ai-net` to reach Ollama at `http://ollama:11434` and Whisper at `http://whisper:8000`.
+8. **Server Operating Schedule (7:00 AM – 2:00 AM):**
    - Cron daemon scheduled to run every 30 minutes between 07:00 and 01:30.
    - Persistent SQLite tracking prevents duplicate processing across daily reboots.
 
@@ -58,7 +62,9 @@ Engineered specifically for local mini-PC servers (such as AMD Ryzen 5700G, 32GB
 flowchart LR
     subgraph Host["Mini PC Server (Ryzen 5700G · 32GB RAM)"]
         subgraph DockerNet["Docker Network: ai-net"]
-            Ollama["🤖 Ollama Container\nhttp://ollama:11434\nModel: qwen2.5:14b"]
+            Ollama["🤖 Ollama Container\nhttp://ollama:11434\nModel: qwen2.5:7b"]
+            Whisper["🎙️ Whisper Container\nhttp://whisper:8000\nModel: large-v3-turbo\n(Shared with n8n)"]
+            N8N["⚡ n8n Workflows\n(Automation)"]
             
             subgraph YT2BILI["Docker Container: yt2bili"]
                 Cron["⏰ Cron Daemon\n(07:00 to 01:30)"]
@@ -75,11 +81,14 @@ flowchart LR
     YT["🎬 YouTube Channels\n(Videos & Shorts)"] -->|"RSS XML"| Monitor
     Monitor --> DB
     DB -->|"Pending Video Queue"| DL
-    DL --> Trans
+    DL -->|"No YouTube subs"| Whisper
+    Whisper -->|"Generated SRT"| Trans
+    DL -->|"Has YouTube subs"| Trans
     Trans <-->|"REST API (:11434)"| Ollama
     Trans --> Burn
     Burn --> Upload
     Upload -->|"Web UPOS Protocol"| Bili["📺 Bilibili (Creator Original)"]
+    N8N <-->|"REST Audio API (:8000)"| Whisper
 ```
 
 ---
@@ -110,7 +119,35 @@ Verify that your Ollama container has the `qwen2.5:7b` model available:
 docker exec -it ollama ollama pull qwen2.5:7b
 ```
 
-### 4. Configure YouTube Channels & Settings
+### 4. Deploy the Standalone Whisper Service (Optional but Recommended)
+
+To enable Speech-to-Text fallback for videos that do not have YouTube captions (and reuse it with n8n):
+```yaml
+# Add to your server's docker-compose or create a whisper stack:
+services:
+  whisper:
+    image: fedirz/faster-whisper-server:latest-cpu
+    container_name: whisper
+    restart: unless-stopped
+    ports:
+      - "8008:8000"
+    environment:
+      - WHISPER__MODEL=deepdml/faster-whisper-large-v3-turbo-ct2
+      - WHISPER__DEVICE=cpu
+      - WHISPER__COMPUTE_TYPE=int8
+      - WHISPER__CPU_THREADS=4
+    volumes:
+      - /mnt/principal/whisper-cache:/root/.cache/huggingface
+    networks:
+      - ai-net
+
+networks:
+  ai-net:
+    external: true
+```
+Launch it with `docker compose up -d`. Inside `ai-net`, it is accessible at `http://whisper:8000/v1/audio/transcriptions`.
+
+### 5. Configure YouTube Channels & Settings
 
 Open `config.yml` in your preferred editor:
 ```bash

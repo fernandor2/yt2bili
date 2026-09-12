@@ -48,6 +48,18 @@ bilibili:
   # Path to persistent cookies file
   cookie_file: "/app/cookies.json"
 
+# Standalone Whisper Speech-to-Text Fallback
+# When a YouTube video lacks manual or auto-generated captions, this calls your
+# standalone faster-whisper container on the 'ai-net' network (reusable by n8n as well).
+whisper:
+  enabled: true
+  # Connects directly to the 'whisper' container via the shared 'ai-net' Docker network
+  url: "http://whisper:8000/v1/audio/transcriptions"
+  # Model identifier
+  model: "deepdml/faster-whisper-large-v3-turbo-ct2"
+  # Transcription request timeout in seconds (300s = 5 min)
+  timeout: 300
+
 # Translation settings (Ollama)
 translation:
   # Ollama API URL: connects directly to the container 'ollama' in the 'ai-net' Docker network

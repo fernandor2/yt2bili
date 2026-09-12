@@ -16,6 +16,8 @@ services:
       - TZ=Europe/Madrid
       # Connects directly to the Ollama container via the shared Docker network 'ai-net'
       - OLLAMA_HOST=http://ollama:11434
+      # Connects directly to the standalone Whisper container via 'ai-net'
+      - WHISPER_URL=http://whisper:8000/v1/audio/transcriptions
     networks:
       - ai-net
 

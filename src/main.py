@@ -17,6 +17,7 @@ from downloader import VideoDownloader
 from translator import SubtitleTranslator
 from burner import SubtitleBurner
 from uploader import BilibiliUploader
+from whisper_client import WhisperClient
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,6 +37,11 @@ def load_config(path: str = "/app/config.yml") -> dict:
     ollama_env = os.environ.get("OLLAMA_HOST")
     if ollama_env:
         config.setdefault("translation", {})["ollama_host"] = ollama_env
+
+    # Override Whisper URL from environment if set
+    whisper_env = os.environ.get("WHISPER_URL")
+    if whisper_env:
+        config.setdefault("whisper", {})["url"] = whisper_env
 
     return config
 
@@ -98,7 +104,17 @@ def process_video(video: dict, config: dict, db: Database) -> bool:
             _cleanup(download_dir, dl_config)
             return False
 
-        # ── Step 2: Translate subtitles ──
+        # ── Step 2: Subtitles (YouTube -> Standalone Whisper fallback -> Ollama translation) ──
+        if not subtitle_path or not os.path.exists(subtitle_path):
+            whisper_cfg = config.get("whisper", {})
+            if whisper_cfg.get("enabled", True):
+                logger.info("[2/5] No YouTube subtitles found. Invoking standalone Whisper service...")
+                whisper_client = WhisperClient(config)
+                whisper_srt = os.path.join(download_dir, f"{video_id}.whisper.srt")
+                subtitle_path = whisper_client.transcribe(video_path, whisper_srt)
+            else:
+                logger.info("[2/5] Whisper fallback is disabled in config.")
+
         translator = SubtitleTranslator(trans_config)
 
         if subtitle_path and os.path.exists(subtitle_path):
@@ -108,7 +124,7 @@ def process_video(video: dict, config: dict, db: Database) -> bool:
             logger.info(f"Translated subtitles saved to: {translated_sub_path}")
         else:
             logger.warning(
-                "[2/5] No subtitles found. Video will be uploaded without Chinese subtitles."
+                "[2/5] No subtitles available. Video will be uploaded without Chinese subtitles."
             )
             translated_sub_path = None
 
