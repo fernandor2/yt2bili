@@ -14,8 +14,22 @@ logger = logging.getLogger("yt2bili.downloader")
 
 class VideoDownloader:
     def __init__(self, config: dict):
+        self.config = config
         self.sub_config = config.get("subtitles", {})
-        self.source_langs = self.sub_config.get("source_langs", ["en.*", "en"])
+        self.source_langs = self.sub_config.get("source_langs", ["en.*", "es.*", "en", "es"])
+        # Optional YouTube cookies file (Netscape format)
+        self.yt_cookies_paths = [
+            config.get("pipeline", {}).get("youtube_cookies_file", "/app/data/yt_cookies.txt"),
+            "/app/data/yt_cookies.txt",
+            "/app/yt_cookies.txt",
+        ]
+
+    def _get_cookie_file(self) -> str | None:
+        """Find an existing YouTube cookies file if provided."""
+        for path in self.yt_cookies_paths:
+            if path and os.path.exists(path) and os.path.isfile(path) and os.path.getsize(path) > 0:
+                return path
+        return None
 
     def download(self, video_id: str, output_dir: str) -> dict | None:
         """
@@ -27,7 +41,9 @@ class VideoDownloader:
                 "subtitle_path": "/path/to/video.en.srt" or None,
                 "thumbnail_path": "/path/to/video.jpg" or None,
                 "description": "...",
-                "title": "..."
+                "title": "...",
+                "duration": 120,
+                "category": "Gaming",
             }
         Returns None if download fails.
         """
@@ -35,10 +51,21 @@ class VideoDownloader:
         output_template = os.path.join(output_dir, "%(id)s.%(ext)s")
 
         ydl_opts = {
-            # Video format: best mp4 up to 1080p to balance quality/size
-            "format": "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best",
+            # Highest quality video up to 1080p + highest quality audio (regardless of source codec).
+            # Remuxes into MP4 container via FFmpeg. Does NOT constrain download to legacy AVC/MP4.
+            "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
             "merge_output_format": "mp4",
             "outtmpl": output_template,
+
+            # Player client emulation:
+            # Android and iOS clients bypass web bot-detection, SABR throttling, and web login checks
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android", "ios", "web_creator", "web"],
+                    "player_skip": ["configs", "webpage"],
+                }
+            },
+
             # Subtitles: try manual first, then auto-generated
             "writesubtitles": True,
             "writeautomaticsub": True,
@@ -58,18 +85,28 @@ class VideoDownloader:
                     "format": "jpg",
                 },
             ],
-            # Retry and robustness
-            "retries": 5,
-            "fragment_retries": 5,
+            # Resilience against network hiccups & throttling
+            "retries": 10,
+            "fragment_retries": 10,
+            "file_access_retries": 5,
             "ignoreerrors": False,
             "no_warnings": False,
-            # Metadata
             "writeinfojson": True,
-            # Avoid issues with YouTube rate limiting
             "sleep_interval": 1,
-            "max_sleep_interval": 5,
+            "max_sleep_interval": 4,
+            "socket_timeout": 30,
             # No duration filter - download everything including Shorts
         }
+
+        # Check for optional YouTube cookies file
+        cookie_file = self._get_cookie_file()
+        if cookie_file:
+            logger.info(f"Using YouTube cookies file: {cookie_file}")
+            ydl_opts["cookiefile"] = cookie_file
+        else:
+            logger.info(
+                "No YouTube cookies file detected. Relying on Android/iOS client emulation."
+            )
 
         try:
             logger.info(f"Downloading {url}...")
@@ -83,6 +120,18 @@ class VideoDownloader:
             # Extract category (e.g. 'Gaming', 'Science & Technology', 'Entertainment')
             categories = info.get("categories") or []
             category = categories[0] if categories else info.get("category", "")
+
+            # Log actual downloaded resolution
+            height = info.get("height") or 0
+            width = info.get("width") or 0
+            format_id = info.get("format_id") or "unknown"
+            logger.info(f"Downloaded stream: {width}x{height} (format: {format_id})")
+
+            if height > 0 and height < 720:
+                logger.warning(
+                    f"⚠️ Video downloaded at lower resolution ({height}p). "
+                    f"If 1080p was expected, place a valid 'yt_cookies.txt' inside 'data/'."
+                )
 
             # Find the downloaded files
             result = {

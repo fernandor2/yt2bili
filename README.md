@@ -287,3 +287,19 @@ docker compose exec yt2bili sqlite3 /app/data/db/processed.db "SELECT video_id, 
 No manual intervention is required.
 - The container is configured with `restart: unless-stopped`. When your mini-PC powers on at 7:00 AM, Docker brings `yt2bili` up automatically.
 - State is preserved in `./data/db/processed.db`, guaranteeing that videos are neither duplicated nor forgotten.
+
+### YouTube Quality Protection & Anti-Throttling
+
+YouTube frequently challenges web downloaders with bot detection, SABR format throttling (downgrading to 360p), or HTTP 403 errors. `yt2bili` implements 4 layers of defense:
+
+1. **Unrestricted Stream Remuxing:**
+   Instead of demanding legacy MP4 streams (which YouTube often only provides at 360p/720p), `yt-dlp` fetches the highest quality stream available (VP9, AV1, or AVC up to 1080p) and FFmpeg automatically remuxes it cleanly into MP4.
+2. **Mobile Client Emulation:**
+   The downloader rotates through `android` and `ios` player clients. Mobile clients bypass Google's web bot-detection challenges, bypass SABR 403 errors, and stream 1080p without requiring web browser cookies.
+3. **Automatic `yt-dlp` Upgrades on Startup:**
+   Whenever the server powers on at 7:00 AM, `entrypoint.sh` automatically checks for and installs the latest `yt-dlp` release, preventing sudden breakages caused by YouTube player changes.
+4. **Optional YouTube Cookies (`yt_cookies.txt`):**
+   If YouTube ever imposes strict IP challenges on your server's public IP:
+   - Export your YouTube cookies in standard Netscape format using a browser extension (such as *Get cookies.txt LOCALLY*).
+   - Save the file as `./data/yt_cookies.txt` on your mini PC.
+   - The container automatically detects this file and routes requests through your authenticated session.

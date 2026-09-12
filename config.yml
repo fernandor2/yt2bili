@@ -109,6 +109,10 @@ pipeline:
   # Keeping this at 1 smoothly distributes uploads across the schedule without burst flooding.
   max_uploads_per_run: 1
 
+  # Optional: Path to export Netscape format YouTube cookies file if YouTube enforces IP challenges.
+  # Simply place a 'yt_cookies.txt' inside the ./data directory and it will be auto-detected.
+  youtube_cookies_file: "/app/data/yt_cookies.txt"
+
   # Directory for temporary video downloads
   download_dir: "/app/data/downloads"
   # SQLite database for tracking processed videos and upload timestamps

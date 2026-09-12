@@ -4,6 +4,9 @@ set -e
 echo "=== yt2bili Pipeline Starting ==="
 echo "Timezone: $(date)"
 
+echo "Checking for yt-dlp updates to prevent YouTube extractor breakage..."
+pip install --no-cache-dir --upgrade yt-dlp >/dev/null 2>&1 || true
+
 # Run the pipeline once on container start, then set up cron
 echo "Running initial pipeline check..."
 python -u /app/src/main.py 2>&1 | tee -a /app/data/pipeline.log
