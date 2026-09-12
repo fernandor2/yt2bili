@@ -23,4 +23,4 @@ RUN chmod +x entrypoint.sh
 # Create data directories
 RUN mkdir -p /app/data/downloads /app/data/db
 
-ENTRYPOINT ["/app/entrypoint.sh"]
+ENTRYPOINT ["/bin/bash", "/app/entrypoint.sh"]

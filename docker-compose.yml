@@ -3,6 +3,7 @@ services:
     build: .
     container_name: yt2bili
     restart: unless-stopped
+    entrypoint: ["/bin/bash", "/app/entrypoint.sh"]
     volumes:
       # Persistent data: database, cookies.json, yt_cookies.txt, downloaded videos
       - ./data:/app/data
