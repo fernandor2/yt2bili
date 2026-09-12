@@ -20,7 +20,6 @@ bilibili:
   tid: 17
 
   # Dynamic YouTube-to-Bilibili Category Mappings
-  # The system detects YouTube's category automatically. You can override or customize here:
   category_mapping:
     "Gaming": 17                  # 单机游戏
     "Science & Technology": 188   # 科技/数码
@@ -37,10 +36,14 @@ bilibili:
     "Howto & Style": 161          # 手工
     "News & Politics": 204        # 热点资讯
 
-  # Copyright: 1 = original (自制), 2 = reprint (转载)
-  copyright: 2
+  # Copyright:
+  # 1 = Original (自制 - RECOMENDADO para contenido propio, mejor posicionamiento y monetización)
+  # 2 = Reprint (转载)
+  copyright: 1
+
   # Tags (comma-separated, max 12)
-  tags: "搬运,翻译,中文字幕"
+  tags: "原创,翻译,中文字幕"
+
   # Cookie file path
   cookie_file: "/app/cookies.json"
 
@@ -60,17 +63,39 @@ subtitles:
   # Source language(s) for subtitles (regex patterns supported)
   source_langs:
     - "en.*"
+    - "es.*"
     - "en"
+    - "es"
+
   # Whether to burn subtitles into video (recommended for Bilibili)
   burn_in: true
+
+  # Subtitle styling mode:
+  # 3 = Opaque black background box (遮挡框) - Tapa limpiamente los subtítulos quemados originales
+  # 1 = Standard outline without background box
+  border_style: 3
+
+  # Padding around the Chinese text in the background box (in pixels)
+  box_padding: 4
+
+  # Vertical margin from the bottom edge (in pixels)
+  margin_v: 30
+
+  # Colors in ASS hexadecimal (&HAABBGGRR):
+  # Box color: &H00000000 = 100% solid opaque black
+  box_color: "&H00000000"
+  # Text color: &H00FFFFFF = Crisp pure white text
+  text_color: "&H00FFFFFF"
+
+  # Font settings
+  font_name: "Noto Sans CJK SC"
+  font_size: 20
+
   # FFmpeg encoding preset (ultrafast/superfast/veryfast/faster/fast/medium)
   # 'faster' is ideal for AMD Ryzen 5700G (8 cores / 16 threads)
   ffmpeg_preset: "faster"
   # CRF quality (18-23 recommended; lower = better quality, bigger file)
   ffmpeg_crf: 20
-  # Font for burned subtitles
-  font_name: "Noto Sans CJK SC"
-  font_size: 18
 
 # Pipeline settings
 pipeline:
