@@ -6,11 +6,12 @@ translates subtitles to Chinese via Ollama, burns them in, and uploads to Bilibi
 """
 
 import logging
-import sys
 import os
 import re
-import yaml
+import shutil
+import sys
 import time
+import yaml
 
 from db import Database
 from monitor import YouTubeMonitor
@@ -74,6 +75,9 @@ def process_video(video: dict, config: dict, db: Database) -> bool:
     bili_config = config["bilibili"]
 
     download_dir = os.path.join(dl_config["download_dir"], video_id)
+    # Clean any leftover partial or corrupted files from a previous power cut or interrupted run
+    if os.path.exists(download_dir):
+        shutil.rmtree(download_dir, ignore_errors=True)
     os.makedirs(download_dir, exist_ok=True)
 
     try:

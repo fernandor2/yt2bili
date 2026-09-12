@@ -81,7 +81,7 @@ class Database:
                 INSERT INTO processed_videos (video_id, channel_id, title, status)
                 VALUES (?, ?, ?, 'pending')
                 ON CONFLICT(video_id) DO UPDATE SET
-                    status = 'pending',
+                    status = CASE WHEN status = 'done' THEN 'done' ELSE 'pending' END,
                     updated_at = datetime('now')
                 """,
                 (video_id, channel_id, title),
