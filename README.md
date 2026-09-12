@@ -14,10 +14,14 @@ Engineered specifically for local mini-PC servers (such as AMD Ryzen 5700G, 32GB
   - [1. Prerequisites](#1-prerequisites)
   - [2. Clone the Repository](#2-clone-the-repository)
   - [3. Ensure Ollama Model is Downloaded](#3-ensure-ollama-model-is-downloaded)
-  - [4. Configure YouTube Channels & Settings](#4-configure-youtube-channels--settings)
-  - [5. One-Time Bilibili QR Code Login](#5-one-time-bilibili-qr-code-login)
-  - [6. Start the Unattended Service](#6-start-the-unattended-service)
-  - [7. Verification & Log Inspection](#7-verification--log-inspection)
+  - [4. Deploy the Standalone Whisper Service](#4-deploy-the-standalone-whisper-service-optional-but-recommended)
+  - [5. Configure YouTube Channels & Settings](#5-configure-youtube-channels--settings)
+  - [6. One-Time Bilibili QR Code Login](#6-one-time-bilibili-qr-code-login)
+  - [7. Start the Unattended Service](#7-start-the-unattended-service)
+  - [8. Verification & Log Inspection](#8-verification--log-inspection)
+- [Cookies & Authentication Guide](#-cookies--authentication-guide)
+  - [1. Bilibili Cookies (cookies.json)](#1-bilibili-cookies-cookiesjson--required)
+  - [2. YouTube Cookies (yt_cookies.txt)](#2-youtube-cookies-yt_cookiestxt--optional)
 - [Automatic Category Mapping (YouTube → Bilibili)](#-automatic-category-mapping-youtube--bilibili)
 - [Subtitle Box Styling (Covering Source Hardsubs)](#-subtitle-box-styling-covering-source-hardsubs)
 - [Rate Limiting & Cooldown Protection](#-rate-limiting--cooldown-protection)
@@ -168,11 +172,15 @@ channels:
 > 2. Right-click anywhere on the page and select **View Page Source**.
 > 3. Search (`Ctrl+F`) for `"channelId":"UC` or use a free channel ID lookup tool.
 
-### 5. One-Time Bilibili QR Code Login
+### 6. One-Time Bilibili QR Code Login
 
 Before running in the background, generate your persistent Bilibili credentials:
 
 ```bash
+# 1. Create an empty cookies file so Docker mounts it as a file (not a directory)
+touch cookies.json
+
+# 2. Launch the interactive QR login
 docker compose run --rm yt2bili biliup login
 ```
 
@@ -181,7 +189,7 @@ docker compose run --rm yt2bili biliup login
 - Tap the **Scan (扫一扫)** icon in the top right corner and confirm the login.
 - Once confirmed, `cookies.json` will be saved in the project root directory. This file is mounted as a persistent volume and automatically renewed upon each upload.
 
-### 6. Start the Unattended Service
+### 7. Start the Unattended Service
 
 Build the Docker image and start the container in detached mode:
 
@@ -189,7 +197,7 @@ Build the Docker image and start the container in detached mode:
 docker compose up -d --build
 ```
 
-### 7. Verification & Log Inspection
+### 8. Verification & Log Inspection
 
 Watch the execution logs in real time:
 ```bash
@@ -200,6 +208,47 @@ To manually trigger an immediate check outside the cron schedule:
 ```bash
 docker compose exec yt2bili python -u /app/src/main.py
 ```
+
+---
+
+## 🍪 Cookies & Authentication Guide
+
+### 1. Bilibili Cookies (`cookies.json`) — Required
+
+Bilibili requires an authenticated session to publish videos.
+
+- **How to obtain them:**
+  Run the interactive terminal login inside the container:
+  ```bash
+  docker compose run --rm yt2bili biliup login
+  ```
+  A QR code will be rendered in your console. Open the **Bilibili App** on your smartphone, tap the **Scan (扫一扫)** icon in the top-right corner, and confirm the login request.
+- **Where to put them:**
+  The command creates `cookies.json` automatically in the root folder of the project (`yt2bili/cookies.json`). You do not need to move or copy it manually.
+- **Persistence & Automatic Token Refresh:**
+  The `docker-compose.yml` mounts this file directly (`./cookies.json:/app/cookies.json`). The underlying `biliup` engine automatically refreshes authentication tokens upon every upload, so you never need to re-login unless your Bilibili account password is changed or the session is revoked.
+
+---
+
+### 2. YouTube Cookies (`yt_cookies.txt`) — Optional
+
+`yt2bili` uses Chrome TLS impersonation (`curl-cffi`) and mobile player clients, so YouTube cookies are **not** needed under normal conditions. However, if YouTube ever challenges your server's public IP address with bot verification, age restrictions, or bandwidth throttling, providing your YouTube cookies solves it immediately.
+
+- **How to obtain them:**
+  1. Open Google Chrome, Firefox, Brave, or Edge on your personal computer where you are logged into your YouTube account.
+  2. Install a browser extension that exports cookies in standard Netscape format:
+     - Recommended (Open-Source): **[Get cookies.txt LOCALLY](https://github.com/kairi003/Get-cookies.txt-LOCALLY)** (available on Chrome Web Store and Firefox Add-ons).
+     - Alternative: **[Cookie-Editor](https://cookie-editor.com/)** (Click *Export* → *Export as Netscape*).
+  3. Navigate to `https://www.youtube.com`.
+  4. Click the extension icon and click **Export** (or download the file).
+  5. Rename the downloaded file to `yt_cookies.txt`.
+- **Where to put them:**
+  Save the file inside the `data/` directory of the `yt2bili` project on your server:
+  ```text
+  yt2bili/data/yt_cookies.txt
+  ```
+- **Auto-Detection:**
+  `yt2bili` automatically checks for `./data/yt_cookies.txt` on every run. If present, it routes all `yt-dlp` requests through your authenticated YouTube session. If absent, it smoothly falls back to Chrome impersonation.
 
 ---
 

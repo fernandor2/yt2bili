@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+# If custom arguments are provided (e.g., 'biliup login' or 'bash'), execute them directly
+if [ "$#" -gt 0 ]; then
+    exec "$@"
+fi
+
 echo "========================================="
 echo "=== yt2bili Container Starting ==="
 echo "=== Time: $(date) ==="
