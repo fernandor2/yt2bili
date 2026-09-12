@@ -50,7 +50,6 @@ class VideoDownloader:
             "extractor_args": {
                 "youtube": {
                     "player_client": ["android", "ios", "web_creator", "web"],
-                    "player_skip": ["configs", "webpage"],
                 }
             },
             "retries": 10,

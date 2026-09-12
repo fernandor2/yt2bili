@@ -144,10 +144,16 @@ class SubtitleTranslator:
                 {"role": "user", "content": user_prompt},
             ],
             "stream": False,
-            "options": {"temperature": self.temperature},
+            "format": "json",
+            "options": {
+                "temperature": self.temperature,
+                "num_ctx": 4096,
+                "num_predict": 2048,
+            },
         }
 
-        response = requests.post(self.api_url, json=payload, timeout=180)
+        # Generous 600s (10 min) timeout to comfortably accommodate 14b models running on CPU
+        response = requests.post(self.api_url, json=payload, timeout=600)
         response.raise_for_status()
 
         data = response.json()
@@ -173,10 +179,20 @@ class SubtitleTranslator:
         if missing:
             logger.warning(
                 f"Translation response missing IDs: {missing}. "
-                f"Filling with original text."
+                f"Retrying missing lines with Ollama..."
             )
-            for mid in missing:
-                translations[mid] = batch[mid]["text"]
+            # Re-translate only the missing slice so no subtitles are left in Spanish/English
+            missing_batch = [batch[m] for m in sorted(missing)]
+            try:
+                sub_translations = self._translate_batch(missing_batch, prev_context)
+                for new_sub_idx, orig_batch_idx in enumerate(sorted(missing)):
+                    if new_sub_idx in sub_translations:
+                        translations[orig_batch_idx] = sub_translations[new_sub_idx]
+            except Exception as retry_err:
+                logger.warning(f"Retry for missing IDs failed ({retry_err}). Filling remaining with original text.")
+                for mid in missing:
+                    if mid not in translations:
+                        translations[mid] = batch[mid]["text"]
 
         return translations
 
@@ -206,7 +222,7 @@ class SubtitleTranslator:
         }
 
         try:
-            response = requests.post(self.api_url, json=payload, timeout=60)
+            response = requests.post(self.api_url, json=payload, timeout=360)
             response.raise_for_status()
             data = response.json()
             result = data["message"]["content"].strip()
