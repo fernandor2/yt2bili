@@ -61,8 +61,15 @@ def process_video(video: dict, config: dict, db: Database) -> bool:
     Returns True if successful, False otherwise.
     """
     video_id = video["video_id"]
-    title = video["title"]
-    channel_name = video["channel_name"]
+    title = video.get("title") or video_id
+    channel_id = video.get("channel_id")
+    channel_name = video.get("channel_name")
+    if not channel_name:
+        for ch in config.get("channels", []):
+            if ch.get("channel_id") == channel_id:
+                channel_name = ch.get("name")
+                break
+    channel_name = channel_name or "YouTube Creator"
 
     logger.info(f"{'='*60}")
     logger.info(f"Processing: {title} ({video_id})")
@@ -311,11 +318,13 @@ def main():
             logger.info(f"Skipping {video_id} (failed within 24h, will retry later)")
             continue
 
-        # Look up channel override if available
+        # Look up channel override and fallback name if available
         channel_id = video.get("channel_id")
         for ch in config.get("channels", []):
             if ch.get("channel_id") == channel_id:
                 video["tid_override"] = ch.get("tid")
+                if not video.get("channel_name"):
+                    video["channel_name"] = ch.get("name")
                 break
 
         if process_video(video, config, db):

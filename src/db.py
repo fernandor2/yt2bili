@@ -27,15 +27,24 @@ class Database:
         with self._get_conn() as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS processed_videos (
-                    video_id    TEXT PRIMARY KEY,
-                    channel_id  TEXT,
-                    title       TEXT,
-                    status      TEXT DEFAULT 'pending',
-                    error_msg   TEXT,
-                    created_at  TEXT DEFAULT (datetime('now')),
-                    updated_at  TEXT DEFAULT (datetime('now'))
+                    video_id     TEXT PRIMARY KEY,
+                    channel_id   TEXT,
+                    channel_name TEXT,
+                    title        TEXT,
+                    status       TEXT DEFAULT 'pending',
+                    error_msg    TEXT,
+                    created_at   TEXT DEFAULT (datetime('now')),
+                    updated_at   TEXT DEFAULT (datetime('now'))
                 )
             """)
+            try:
+                conn.execute("ALTER TABLE processed_videos ADD COLUMN channel_name TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE processed_videos ADD COLUMN upload_date TEXT")
+            except sqlite3.OperationalError:
+                pass
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS metadata (
                     key   TEXT PRIMARY KEY,
@@ -73,18 +82,20 @@ class Database:
             ).fetchone()
             return row is not None
 
-    def mark_pending(self, video_id: str, channel_id: str, title: str):
+    def mark_pending(self, video_id: str, channel_id: str, title: str, channel_name: str = "", upload_date: str = ""):
         """Record a video as pending processing."""
         with self._get_conn() as conn:
             conn.execute(
                 """
-                INSERT INTO processed_videos (video_id, channel_id, title, status)
-                VALUES (?, ?, ?, 'pending')
+                INSERT INTO processed_videos (video_id, channel_id, channel_name, title, upload_date, status)
+                VALUES (?, ?, ?, ?, ?, 'pending')
                 ON CONFLICT(video_id) DO UPDATE SET
+                    channel_name = COALESCE(NULLIF(excluded.channel_name, ''), channel_name),
+                    upload_date = COALESCE(NULLIF(excluded.upload_date, ''), upload_date),
                     status = CASE WHEN status = 'done' THEN 'done' ELSE 'pending' END,
                     updated_at = datetime('now')
                 """,
-                (video_id, channel_id, title),
+                (video_id, channel_id, channel_name, title, upload_date),
             )
             conn.commit()
 
@@ -93,7 +104,7 @@ class Database:
         with self._get_conn() as conn:
             rows = conn.execute(
                 """
-                SELECT video_id, channel_id, title, created_at
+                SELECT video_id, channel_id, channel_name, title, upload_date, created_at
                 FROM processed_videos
                 WHERE status = 'pending'
                 ORDER BY created_at ASC
@@ -102,6 +113,52 @@ class Database:
                 (limit,),
             ).fetchall()
             return [dict(r) for r in rows]
+
+    def get_upload_date(self, video_id: str) -> str | None:
+        """Get cached upload_date for a video."""
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT upload_date FROM processed_videos WHERE video_id = ?",
+                (video_id,),
+            ).fetchone()
+            return row["upload_date"] if row and row["upload_date"] else None
+
+    def set_upload_date(self, video_id: str, upload_date: str):
+        """Cache upload_date for a video."""
+        with self._get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO processed_videos (video_id, upload_date, status)
+                VALUES (?, ?, 'pending')
+                ON CONFLICT(video_id) DO UPDATE SET upload_date = excluded.upload_date
+                """,
+                (video_id, upload_date),
+            )
+            conn.commit()
+
+    def purge_stale_pending(self, valid_video_ids: set[str]):
+        """Remove any pending videos from SQLite that fall outside the active lookback window."""
+        with self._get_conn() as conn:
+            if valid_video_ids:
+                placeholders = ",".join("?" for _ in valid_video_ids)
+                cur = conn.execute(
+                    f"""
+                    DELETE FROM processed_videos
+                    WHERE status = 'pending' AND video_id NOT IN ({placeholders})
+                    """,
+                    tuple(valid_video_ids),
+                )
+            else:
+                cur = conn.execute(
+                    """
+                    DELETE FROM processed_videos
+                    WHERE status = 'pending'
+                    """
+                )
+            purged = cur.rowcount
+            conn.commit()
+            if purged > 0:
+                logger.info(f"Purged {purged} stale pending video(s) outside the 90-day window from database")
 
     def mark_done(self, video_id: str):
         """Mark a video as successfully processed."""

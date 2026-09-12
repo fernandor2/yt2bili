@@ -33,6 +33,7 @@ class YouTubeMonitor:
         Returns list of newly discovered videos.
         """
         all_new = []
+        all_valid_ids = set()
 
         for channel in self.channels:
             channel_id = channel["channel_id"]
@@ -44,11 +45,18 @@ class YouTubeMonitor:
 
                 for video in videos:
                     vid = video["video_id"]
+                    all_valid_ids.add(vid)
                     if not self.db.is_processed(vid):
                         video["tid_override"] = channel.get("tid")
                         new_videos.append(video)
                         # Record in SQLite queue as pending
-                        self.db.mark_pending(vid, channel_id, video["title"])
+                        self.db.mark_pending(
+                            vid,
+                            channel_id,
+                            video["title"],
+                            channel_name=channel_name,
+                            upload_date=video.get("upload_date", ""),
+                        )
 
                 if new_videos:
                     logger.info(
@@ -63,6 +71,9 @@ class YouTubeMonitor:
                 logger.error(f"Error checking channel {channel_name}: {e}")
 
             time.sleep(2)
+
+        # Purge any stale pending videos that were queued outside the 90-day window
+        self.db.purge_stale_pending(all_valid_ids)
 
         return all_new
 
@@ -110,11 +121,13 @@ class YouTubeMonitor:
 
                         # Check published date if available
                         pub_str = entry.get("published", "")
+                        upload_date_str = ""
                         if pub_str:
                             try:
                                 dt = datetime.fromisoformat(pub_str.replace("Z", "+00:00"))
                                 if dt.replace(tzinfo=None) < cutoff_dt:
                                     continue
+                                upload_date_str = dt.strftime("%Y%m%d")
                             except Exception:
                                 pass
 
@@ -125,6 +138,7 @@ class YouTubeMonitor:
                             "title": entry.get("title", ""),
                             "url": f"https://www.youtube.com/watch?v={video_id}",
                             "published": pub_str,
+                            "upload_date": upload_date_str,
                             "description": _get_description(entry),
                             "thumbnail": _get_thumbnail(entry),
                         })
@@ -132,6 +146,30 @@ class YouTubeMonitor:
         except Exception as e:
             logger.debug(f"[{channel_name}] RSS fetch note: {e}")
         return []
+
+    def _get_video_upload_date(self, video_id: str) -> str | None:
+        """Fetch upload_date (YYYYMMDD) for a video, checking DB first, then yt-dlp metadata."""
+        cached_date = self.db.get_upload_date(video_id)
+        if cached_date:
+            return cached_date
+
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+        }
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+                if info:
+                    ud = info.get("upload_date")
+                    if ud:
+                        ud_str = str(ud)
+                        self.db.set_upload_date(video_id, ud_str)
+                        return ud_str
+        except Exception as e:
+            logger.debug(f"Could not extract upload date for {video_id}: {e}")
+        return None
 
     def _fetch_via_ytdlp(self, channel_id: str, channel_name: str, seen_ids: set) -> list[dict]:
         """Extract regular videos and Shorts directly from the channel tabs up to max_history_days old."""
@@ -142,7 +180,7 @@ class YouTubeMonitor:
 
         ydl_opts = {
             "extract_flat": "in_playlist",
-            "playlist_end": 150,  # Deep enough to capture the full 90-day archive
+            "playlist_end": 60,  # Prevent runaway scraping beyond reasonable 90-day window
             "quiet": True,
             "no_warnings": True,
         }
@@ -166,17 +204,13 @@ class YouTubeMonitor:
                         if not video_id:
                             continue
 
-                        # Check date boundaries to stop scanning when reaching older content
+                        # Check timestamp if present
                         ts = entry.get("timestamp")
                         if ts and ts < cutoff_ts:
-                            logger.info(f"  [{channel_name}] Reached {kind} older than {self.max_history_days} days. Ending tab scan.")
+                            logger.info(f"  [{channel_name}] Reached {kind} older than {self.max_history_days} days (timestamp). Ending tab scan.")
                             break
 
-                        ud = entry.get("upload_date")
-                        if ud and str(ud) < cutoff_date:
-                            logger.info(f"  [{channel_name}] Reached {kind} date {ud} older than {self.max_history_days} days. Ending tab scan.")
-                            break
-
+                        # Check relative text if present
                         raw_pub = str(entry.get("published_time") or entry.get("published") or "").lower()
                         if "year" in raw_pub or "año" in raw_pub:
                             logger.info(f"  [{channel_name}] Reached {kind} from last year ({raw_pub}). Ending tab scan.")
@@ -185,6 +219,19 @@ class YouTubeMonitor:
                         if month_match and int(month_match.group(1)) > (self.max_history_days // 30):
                             logger.info(f"  [{channel_name}] Reached {kind} {raw_pub}. Ending tab scan.")
                             break
+
+                        # Check or fetch upload date
+                        ud = entry.get("upload_date")
+                        if not ud and video_id not in seen_ids:
+                            ud = self._get_video_upload_date(video_id)
+
+                        if ud:
+                            if str(ud) < cutoff_date:
+                                logger.info(
+                                    f"  [{channel_name}] Reached {kind} ({video_id}) uploaded on {ud} "
+                                    f"(older than {self.max_history_days} days). Ending tab scan."
+                                )
+                                break
 
                         if video_id in seen_ids:
                             continue
@@ -196,7 +243,8 @@ class YouTubeMonitor:
                             "channel_name": channel_name,
                             "title": entry.get("title", ""),
                             "url": f"https://www.youtube.com/watch?v={video_id}",
-                            "published": str(entry.get("upload_date") or ""),
+                            "published": str(ud or entry.get("upload_date") or ""),
+                            "upload_date": str(ud or ""),
                             "description": entry.get("description", ""),
                             "thumbnail": entry.get("thumbnails", [{}])[-1].get("url", "") if entry.get("thumbnails") else "",
                             "is_short": (kind == "shorts"),
