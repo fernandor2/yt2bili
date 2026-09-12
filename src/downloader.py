@@ -47,12 +47,6 @@ class VideoDownloader:
     def _get_base_opts(self, cookie_file: str | None) -> dict:
         """Common yt-dlp options with anti-bot and resilience flags."""
         opts = {
-            "extractor_args": {
-                "youtube": {
-                    # 'web' and 'tv' provide unrestricted 1080p DASH streams without SABR throttling
-                    "player_client": ["web", "tv"],
-                }
-            },
             "retries": 10,
             "fragment_retries": 10,
             "file_access_retries": 5,
@@ -62,10 +56,14 @@ class VideoDownloader:
             "max_sleep_interval": 3,
             "socket_timeout": 30,
         }
-        if self._has_curl_cffi():
-            opts["impersonate"] = "chrome"
         if cookie_file:
             opts["cookiefile"] = cookie_file
+        else:
+            opts["extractor_args"] = {
+                "youtube": {
+                    "player_client": ["mweb", "web"],
+                }
+            }
         return opts
 
     def download(self, video_id: str, output_dir: str) -> dict | None:
@@ -136,26 +134,10 @@ class VideoDownloader:
                 logger.info("No subtitle track available for this video.")
                 return None
         except Exception as e:
-            if "impersonate" in sub_opts:
-                logger.warning(
-                    f"Subtitle download with TLS impersonation failed ({e}). "
-                    f"Retrying without impersonation..."
-                )
-                sub_opts.pop("impersonate", None)
-                try:
-                    with yt_dlp.YoutubeDL(sub_opts) as ydl:
-                        ydl.download([url])
-                    found = self._find_subtitle(output_dir, video_id)
-                    if found:
-                        logger.info(f"Successfully downloaded subtitle track on retry: {found}")
-                        return found
-                except Exception as retry_e:
-                    logger.warning(f"Subtitle retry without impersonation also failed: {retry_e}")
-            else:
-                logger.warning(
-                    f"Subtitle fetch encountered non-fatal error: {e}. "
-                    f"Will proceed with video download."
-                )
+            logger.warning(
+                f"Subtitle fetch encountered non-fatal error: {e}. "
+                f"Will proceed with video download."
+            )
             return self._find_subtitle(output_dir, video_id)
 
     def _download_video_stream(
@@ -184,21 +166,8 @@ class VideoDownloader:
             with yt_dlp.YoutubeDL(video_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
         except Exception as e:
-            if "impersonate" in video_opts:
-                logger.warning(
-                    f"Video download with TLS impersonation failed ({e}). "
-                    f"Retrying without impersonation..."
-                )
-                video_opts.pop("impersonate", None)
-                try:
-                    with yt_dlp.YoutubeDL(video_opts) as ydl:
-                        info = ydl.extract_info(url, download=True)
-                except Exception as retry_err:
-                    logger.exception(f"Video download failed on retry without impersonation: {retry_err}")
-                    return None
-            else:
-                logger.exception(f"Video download failed: {e}")
-                return None
+            logger.exception(f"Video download failed: {e}")
+            return None
 
         if not info:
             logger.error(f"Failed to extract info for {video_id}")
