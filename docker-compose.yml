@@ -1,17 +1,16 @@
-version: "3.8"
-
 services:
   yt2bili:
     build: .
     container_name: yt2bili
     restart: unless-stopped
     volumes:
-      # Persistent data: database, cookies, downloaded videos
+      # Persistent data: database, cookies.json, yt_cookies.txt, downloaded videos
       - ./data:/app/data
       # Config file
       - ./config.yml:/app/config.yml:ro
-      # Bilibili cookies (generated once via biliup login)
-      - ./cookies.json:/app/cookies.json
+      # Live code mounts: changes take effect immediately on 'git pull' without rebuilding
+      - ./src:/app/src:ro
+      - ./entrypoint.sh:/app/entrypoint.sh:ro
     environment:
       - TZ=Europe/Madrid
       # Connects directly to the Ollama container via the shared Docker network 'ai-net'

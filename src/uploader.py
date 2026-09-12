@@ -83,7 +83,7 @@ class BilibiliUploader:
         self.default_tid = config.get("tid", 17)
         self.copyright = config.get("copyright", 2)
         self.tags = config.get("tags", "搬运,翻译,中文字幕")
-        self.cookie_file = config.get("cookie_file", "/app/cookies.json")
+        self.cookie_file = config.get("cookie_file", "/app/data/cookies.json")
         self.lines = config.get("lines", "AUTO")
         self.threads = config.get("threads", 3)
 
@@ -93,6 +93,20 @@ class BilibiliUploader:
         if isinstance(custom_mapping, dict):
             for k, v in custom_mapping.items():
                 self.category_mapping[str(k).strip().lower()] = int(v)
+
+    def _resolve_cookie_file(self) -> str | None:
+        """Find the active Bilibili cookies file across standard paths."""
+        candidates = [
+            self.cookie_file,
+            "/app/data/cookies.json",
+            "/app/cookies.json",
+            "./data/cookies.json",
+            "./cookies.json",
+        ]
+        for path in candidates:
+            if path and os.path.exists(path) and os.path.isfile(path) and os.path.getsize(path) > 0:
+                return path
+        return None
 
     def resolve_tid(self, yt_category: str = "", tid_override: int | None = None) -> int:
         """
@@ -150,10 +164,11 @@ class BilibiliUploader:
             logger.error(f"Video file not found: {video_path}")
             return False
 
-        if not os.path.exists(self.cookie_file):
+        cookie_path = self._resolve_cookie_file()
+        if not cookie_path:
             logger.error(
-                f"Cookie file not found: {self.cookie_file}. "
-                f"Run 'biliup login' first to generate it."
+                f"Cookie file not found. Checked: {self.cookie_file}, /app/data/cookies.json, /app/cookies.json. "
+                f"Run 'docker compose run --rm yt2bili biliup login' first to authenticate."
             )
             return False
 
@@ -171,6 +186,7 @@ class BilibiliUploader:
         logger.info(f"  Copyright: {self.copyright}")
         logger.info(f"  File: {video_path} ({os.path.getsize(video_path) / 1e6:.1f}MB)")
         logger.info(f"  Line: {self.lines}, Threads: {self.threads}")
+        logger.info(f"  Auth: using {cookie_path}")
 
         try:
             # Create video metadata container
@@ -192,7 +208,7 @@ class BilibiliUploader:
 
             # Initialize the uploader with cookie-based auth
             with BiliBili(video) as bili:
-                bili.login(self.cookie_file, self.cookie_file)
+                bili.login(cookie_path, cookie_path)
 
                 # Upload the video file (uses Rust UPOS engine)
                 logger.info("Uploading video file via UPOS...")
@@ -248,15 +264,18 @@ class BilibiliUploader:
 
     def check_auth(self) -> bool:
         """Verify that the cookie file exists and is loadable."""
-        if not os.path.exists(self.cookie_file):
-            logger.error(f"Cookie file not found: {self.cookie_file}")
+        cookie_path = self._resolve_cookie_file()
+        if not cookie_path:
+            logger.error(
+                f"Cookie file not found. Checked: {self.cookie_file}, /app/data/cookies.json, /app/cookies.json"
+            )
             return False
 
         try:
             video = Data()
             with BiliBili(video) as bili:
-                bili.login(self.cookie_file, self.cookie_file)
-            logger.info("Bilibili authentication valid")
+                bili.login(cookie_path, cookie_path)
+            logger.info(f"Bilibili authentication valid (using {cookie_path})")
             return True
         except Exception as e:
             logger.warning(f"Auth check failed: {e}")

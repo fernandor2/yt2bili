@@ -177,25 +177,32 @@ channels:
 Before running in the background, generate your persistent Bilibili credentials:
 
 ```bash
-# 1. Create an empty cookies file so Docker mounts it as a file (not a directory)
-touch cookies.json
+# 1. If an empty directory named 'cookies.json' was created by a previous run, remove it:
+[ -d "cookies.json" ] && rm -rf cookies.json
 
 # 2. Launch the interactive QR login
 docker compose run --rm yt2bili biliup login
 ```
 
+*(Alternative direct command if you wish to bypass entrypoint scripts:)*
+```bash
+docker compose run --rm --entrypoint biliup yt2bili -u /app/data/cookies.json login
+```
+
 - A QR code will be rendered in your terminal.
 - Open the **Bilibili Mobile App** on your smartphone.
 - Tap the **Scan (扫一扫)** icon in the top right corner and confirm the login.
-- Once confirmed, `cookies.json` will be saved in the project root directory. This file is mounted as a persistent volume and automatically renewed upon each upload.
+- Once confirmed, `cookies.json` will be saved inside `./data/cookies.json` (which is permanently mounted via `./data:/app/data`). The underlying `biliup` engine automatically refreshes authentication tokens upon every upload.
 
 ### 7. Start the Unattended Service
 
-Build the Docker image and start the container in detached mode:
+Start the container in detached mode:
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
+
+*(Note: Live code mounts `./src` and `./entrypoint.sh` ensure that subsequent `git pull` updates take effect immediately without having to rebuild the container).*
 
 ### 8. Verification & Log Inspection
 
@@ -224,9 +231,9 @@ Bilibili requires an authenticated session to publish videos.
   ```
   A QR code will be rendered in your console. Open the **Bilibili App** on your smartphone, tap the **Scan (扫一扫)** icon in the top-right corner, and confirm the login request.
 - **Where to put them:**
-  The command creates `cookies.json` automatically in the root folder of the project (`yt2bili/cookies.json`). You do not need to move or copy it manually.
+  The login command creates `cookies.json` automatically inside the `data/` directory (`yt2bili/data/cookies.json`). Because `./data` is mounted into the container, it persists across restarts and server reboots.
 - **Persistence & Automatic Token Refresh:**
-  The `docker-compose.yml` mounts this file directly (`./cookies.json:/app/cookies.json`). The underlying `biliup` engine automatically refreshes authentication tokens upon every upload, so you never need to re-login unless your Bilibili account password is changed or the session is revoked.
+  The underlying `biliup` engine automatically refreshes authentication tokens upon every upload, so you never need to re-login unless your Bilibili account password is changed or the session is revoked.
 
 ---
 

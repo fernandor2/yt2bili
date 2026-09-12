@@ -45,8 +45,8 @@ bilibili:
   # Tags (comma-separated, up to 12 tags)
   tags: "原创,翻译,中文字幕"
 
-  # Path to persistent cookies file
-  cookie_file: "/app/cookies.json"
+  # Path to persistent cookies file (stored inside persistent ./data/ directory)
+  cookie_file: "/app/data/cookies.json"
 
 # Standalone Whisper Speech-to-Text Fallback
 # When a YouTube video lacks manual or auto-generated captions, this calls your

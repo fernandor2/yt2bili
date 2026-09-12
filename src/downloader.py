@@ -36,10 +36,17 @@ class VideoDownloader:
                 return path
         return None
 
+    def _has_curl_cffi(self) -> bool:
+        """Check if curl_cffi is available for TLS impersonation."""
+        try:
+            import curl_cffi  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
     def _get_base_opts(self, cookie_file: str | None) -> dict:
         """Common yt-dlp options with anti-bot and resilience flags."""
         opts = {
-            "impersonate": "chrome",  # Uses curl-cffi to impersonate Chrome TLS fingerprint
             "extractor_args": {
                 "youtube": {
                     "player_client": ["android", "ios", "web_creator", "web"],
@@ -55,6 +62,8 @@ class VideoDownloader:
             "max_sleep_interval": 3,
             "socket_timeout": 30,
         }
+        if self._has_curl_cffi():
+            opts["impersonate"] = "chrome"
         if cookie_file:
             opts["cookiefile"] = cookie_file
         return opts
@@ -127,10 +136,26 @@ class VideoDownloader:
                 logger.info("No subtitle track available for this video.")
                 return None
         except Exception as e:
-            logger.warning(
-                f"Subtitle fetch encountered non-fatal error: {e}. "
-                f"Will proceed with video download."
-            )
+            if "impersonate" in sub_opts:
+                logger.warning(
+                    f"Subtitle download with TLS impersonation failed ({e}). "
+                    f"Retrying without impersonation..."
+                )
+                sub_opts.pop("impersonate", None)
+                try:
+                    with yt_dlp.YoutubeDL(sub_opts) as ydl:
+                        ydl.download([url])
+                    found = self._find_subtitle(output_dir, video_id)
+                    if found:
+                        logger.info(f"Successfully downloaded subtitle track on retry: {found}")
+                        return found
+                except Exception as retry_e:
+                    logger.warning(f"Subtitle retry without impersonation also failed: {retry_e}")
+            else:
+                logger.warning(
+                    f"Subtitle fetch encountered non-fatal error: {e}. "
+                    f"Will proceed with video download."
+                )
             return self._find_subtitle(output_dir, video_id)
 
     def _download_video_stream(
@@ -153,47 +178,61 @@ class VideoDownloader:
             ],
         })
 
+        info = None
         try:
             logger.info(f"Downloading video stream from {url}...")
             with yt_dlp.YoutubeDL(video_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
-                if not info:
-                    logger.error(f"Failed to extract info for {video_id}")
-                    return None
-
-            height = info.get("height") or 0
-            width = info.get("width") or 0
-            format_id = info.get("format_id") or "unknown"
-            logger.info(f"Downloaded stream: {width}x{height} (format: {format_id})")
-
-            if height > 0 and height < 720:
+        except Exception as e:
+            if "impersonate" in video_opts:
                 logger.warning(
-                    f"⚠️ Stream downloaded at lower resolution ({height}p). "
-                    f"If 1080p is available, consider placing a 'yt_cookies.txt' inside 'data/'."
+                    f"Video download with TLS impersonation failed ({e}). "
+                    f"Retrying without impersonation..."
                 )
-
-            categories = info.get("categories") or []
-            category = categories[0] if categories else info.get("category", "")
-
-            video_path = self._find_video(output_dir, video_id)
-            thumbnail_path = self._find_thumbnail(output_dir, video_id)
-
-            if not video_path:
-                logger.error(f"Video file not found in output directory {output_dir}")
+                video_opts.pop("impersonate", None)
+                try:
+                    with yt_dlp.YoutubeDL(video_opts) as ydl:
+                        info = ydl.extract_info(url, download=True)
+                except Exception as retry_err:
+                    logger.exception(f"Video download failed on retry without impersonation: {retry_err}")
+                    return None
+            else:
+                logger.exception(f"Video download failed: {e}")
                 return None
 
-            return {
-                "video_path": video_path,
-                "thumbnail_path": thumbnail_path,
-                "description": info.get("description", ""),
-                "title": info.get("title", ""),
-                "duration": info.get("duration", 0),
-                "category": category,
-            }
-
-        except Exception as e:
-            logger.error(f"Video download failed: {e}")
+        if not info:
+            logger.error(f"Failed to extract info for {video_id}")
             return None
+
+        height = info.get("height") or 0
+        width = info.get("width") or 0
+        format_id = info.get("format_id") or "unknown"
+        logger.info(f"Downloaded stream: {width}x{height} (format: {format_id})")
+
+        if height > 0 and height < 720:
+            logger.warning(
+                f"⚠️ Stream downloaded at lower resolution ({height}p). "
+                f"If 1080p is available, consider placing a 'yt_cookies.txt' inside 'data/'."
+            )
+
+        categories = info.get("categories") or []
+        category = categories[0] if categories else info.get("category", "")
+
+        video_path = self._find_video(output_dir, video_id)
+        thumbnail_path = self._find_thumbnail(output_dir, video_id)
+
+        if not video_path:
+            logger.error(f"Video file not found in output directory {output_dir}")
+            return None
+
+        return {
+            "video_path": video_path,
+            "thumbnail_path": thumbnail_path,
+            "description": info.get("description", ""),
+            "title": info.get("title", ""),
+            "duration": info.get("duration", 0),
+            "category": category,
+        }
 
     def _find_video(self, output_dir: str, video_id: str) -> str | None:
         """Find the downloaded video file."""
