@@ -19,6 +19,7 @@ Engineered specifically for local mini-PC servers (such as AMD Ryzen 5700G, 32GB
   - [6. One-Time Bilibili QR Code Login](#6-one-time-bilibili-qr-code-login)
   - [7. Start the Unattended Service](#7-start-the-unattended-service)
   - [8. Verification & Log Inspection](#8-verification--log-inspection)
+- [Testing & Staging Mode (`test`)](#-testing--staging-mode-test)
 - [Cookies & Authentication Guide](#-cookies--authentication-guide)
   - [1. Bilibili Cookies (cookies.json)](#1-bilibili-cookies-cookiesjson--required)
   - [2. YouTube Cookies (yt_cookies.txt)](#2-youtube-cookies-yt_cookiestxt--optional)
@@ -36,9 +37,9 @@ Engineered specifically for local mini-PC servers (such as AMD Ryzen 5700G, 32GB
    - Polls official YouTube Atom/RSS feeds every 30 minutes without API keys or quota consumption.
    - Ingests both standard widescreen videos and vertical Shorts without duration constraints.
 2. **Local LLM Subtitle Translation (Ollama):**
-   - Batches subtitles (30 lines per call) with a sliding context window for natural Chinese phrasing.
-   - Timestamps are completely decoupled and preserved in Python via `pysubs2` to eliminate audio desync.
-   - Uses `qwen2.5:7b`, the premier open-weights model for English/Spanish to Chinese translation.
+   - Batches subtitles (15 lines per call) with a sliding context window for natural Chinese phrasing.
+   - Decoupled from timestamps, auto-cleans YouTube VTT karaoke tags and progressive recognition overlaps.
+   - Uses `qwen2.5:14b`, the premier open-weights model for English/Spanish to Chinese translation.
 3. **Hardcoded Subtitles with Opaque Box (`BorderStyle=3`):**
    - Automatically overlays a solid black background box (`&H00000000`) behind the Chinese characters.
    - Completely covers and replaces any pre-existing burned-in subtitles present in the source video.
@@ -66,7 +67,7 @@ Engineered specifically for local mini-PC servers (such as AMD Ryzen 5700G, 32GB
 flowchart LR
     subgraph Host["Mini PC Server (Ryzen 5700G · 32GB RAM)"]
         subgraph DockerNet["Docker Network: ai-net"]
-            Ollama["🤖 Ollama Container\nhttp://ollama:11434\nModel: qwen2.5:7b"]
+            Ollama["🤖 Ollama Container\nhttp://ollama:11434\nModel: qwen2.5:14b"]
             Whisper["🎙️ Whisper Container\nhttp://whisper:8000\nModel: large-v3-turbo\n(Shared with n8n)"]
             N8N["⚡ n8n Workflows\n(Automation)"]
             
@@ -118,9 +119,9 @@ cd yt2bili
 
 ### 3. Ensure Ollama Model is Downloaded
 
-Verify that your Ollama container has the `qwen2.5:7b` model available:
+Verify that your Ollama container has the `qwen2.5:14b` model available:
 ```bash
-docker exec -it ollama ollama pull qwen2.5:7b
+docker exec -it ollama ollama pull qwen2.5:14b
 ```
 
 ### 4. Deploy the Standalone Whisper Service (Optional but Recommended)
@@ -214,6 +215,55 @@ docker compose logs -f yt2bili
 To manually trigger an immediate check outside the cron schedule:
 ```bash
 docker compose exec yt2bili python -u /app/src/main.py
+```
+
+---
+
+## 🧪 Testing & Staging Mode (`test`)
+
+`yt2bili` includes a dedicated, isolated test mode (`test_pipeline.py`) designed to quickly test download, subtitle cleanup, LLM translation (`qwen2.5:14b`), and hardsub burning on a single video **without affecting production state**.
+
+### Key Differences from Production:
+- **Zero SQLite lock or records:** Does **not** insert into `processed.db`. You can run the same test 50 times in a row without database conflicts or needing manual deletions.
+- **Bypasses Cooldown:** Ignores the 60-minute rate limit.
+- **Local Inspection:** Leaves the final subtitled video in `./data/test/test_<video_id>_zh.mp4` on your host machine so you can inspect it with VLC or MPV anytime.
+- **Unlisted Bilibili Drafts:** When uploaded to Bilibili, it schedules publication 7 days into the future (`dtime = +7 days`) and tags the title with `【TEST/草稿】`. It is **never published to your followers** and remains in your private Creator Studio ([稿件管理](https://member.bilibili.com/platform/upload-manager/article)) where you can preview it and delete it whenever you want.
+
+---
+
+### Usage Examples
+
+#### 1. Test Default Video (YouTube Short)
+Runs download, subtitle translation, burning, and uploads as an unlisted 7-day draft:
+```bash
+docker compose run --rm yt2bili test
+```
+*(Default test video: `https://youtube.com/shorts/UhsOJwHTDzM`)*
+
+#### 2. Test a Custom Video or Short
+Pass any YouTube video ID or full URL:
+```bash
+# Using a full Short URL:
+docker compose run --rm yt2bili test https://youtube.com/shorts/UhsOJwHTDzM
+
+# Or using an 11-character video ID:
+docker compose run --rm yt2bili test FNUh4nb22SM
+```
+
+#### 3. Local-Only Mode (No Upload to Bilibili)
+If you only want to verify the Ollama translation and check how the burned subtitles look in `./data/test/` without uploading anything to Bilibili:
+```bash
+# Default video, local only:
+docker compose run --rm yt2bili test --no-upload
+
+# Specific video, local only:
+docker compose run --rm yt2bili test UhsOJwHTDzM --no-upload
+```
+
+#### 4. Keep Temporary Files (Subtitle inspection)
+To keep the raw and translated `.srt` / `.vtt` files in `./data/test/dl_<video_id>/` for debugging:
+```bash
+docker compose run --rm yt2bili test UhsOJwHTDzM --keep-temp
 ```
 
 ---
@@ -336,7 +386,7 @@ bilibili:
 
 translation:
   ollama_host: "http://ollama:11434" # Ollama endpoint in ai-net
-  model: "qwen2.5:7b" # Model identifier
+  model: "qwen2.5:14b" # Model identifier
   batch_size: 30 # Lines translated per LLM prompt
   temperature: 0.3 # Generation temperature
 

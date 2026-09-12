@@ -11,6 +11,7 @@ The biliup package (pip install biliup) bundles:
 
 import logging
 import os
+import time
 
 from biliup.plugins.bili_webup import BiliBili, Data
 
@@ -144,6 +145,7 @@ class BilibiliUploader:
         cover_path: str | None = None,
         yt_category: str = "",
         tid_override: int | None = None,
+        draft: bool = False,
     ) -> bool:
         """
         Upload a video to Bilibili using biliup's Python API directly.
@@ -156,6 +158,7 @@ class BilibiliUploader:
             cover_path: Optional path to cover image
             yt_category: Original YouTube category string (e.g. 'Gaming', 'Science & Technology')
             tid_override: Optional channel-specific TID override
+            draft: If True, schedule publication 7 days ahead (unlisted draft in Creator Center)
 
         Returns:
             True if upload succeeded, False otherwise.
@@ -175,11 +178,14 @@ class BilibiliUploader:
         # Resolve category TID
         tid = self.resolve_tid(yt_category=yt_category, tid_override=tid_override)
 
+        if draft and not title.startswith("【TEST/草稿】"):
+            title = f"【TEST/草稿】{title}"
+
         # Truncate fields to Bilibili limits
         title = title[:80]
         description = description[:2000]
 
-        logger.info(f"Uploading to Bilibili:")
+        logger.info(f"Uploading to Bilibili{' [DRAFT MODE]' if draft else ''}:")
         logger.info(f"  Title: {title}")
         logger.info(f"  TID: {tid} (YouTube Category: '{yt_category or 'N/A'}')")
         logger.info(f"  Tags: {self.tags}")
@@ -205,6 +211,11 @@ class BilibiliUploader:
                 video.source = source_url
             video.tid = tid
             video.set_tag(self._parse_tags())
+
+            if draft:
+                # Schedule publication 7 days in the future (unlisted draft in creator center)
+                video.dtime = int(time.time()) + (7 * 86400)
+                logger.info("  Draft mode: publication scheduled 7 days ahead (saved as unlisted draft)")
 
             # Initialize the uploader with cookie-based auth
             with BiliBili(video) as bili:

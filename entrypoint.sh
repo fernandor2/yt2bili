@@ -17,8 +17,12 @@ if [ -f "/app/data/cookies.json" ] && [ ! -e "/app/cookies.json" ]; then
     ln -sf /app/data/cookies.json /app/cookies.json 2>/dev/null || true
 fi
 
-# If custom arguments are provided (e.g. 'biliup login', 'bash', or custom commands)
+# If custom arguments are provided (e.g. 'test', 'biliup login', 'bash', or custom commands)
 if [ "$#" -gt 0 ]; then
+    if [ "$1" = "test" ]; then
+        shift
+        exec python -u /app/src/test_pipeline.py "$@"
+    fi
     if [ "$1" = "biliup" ] && [ "$2" = "login" ]; then
         echo "========================================="
         echo "=== Bilibili Interactive QR Login ==="
