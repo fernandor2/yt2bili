@@ -61,12 +61,16 @@ translation:
 
 # Subtitle settings
 subtitles:
-  # Source language(s) for subtitles (supports regex patterns and exact codes)
+  # Source language(s) for subtitles (supports regex patterns and exact codes).
+  # Prioritizes native original audio transcripts (es-orig) to avoid Google auto-translation 429 rate limits.
   source_langs:
-    - "en.*"
-    - "es.*"
-    - "en"
+    - "es-orig"
     - "es"
+    - "es-419"
+    - "es.*"
+    - "en-orig"
+    - "en"
+    - "en.*"
 
   # Whether to burn subtitles into video (recommended for Bilibili)
   burn_in: true

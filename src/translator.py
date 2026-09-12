@@ -109,7 +109,7 @@ class SubtitleTranslator:
         Only text content is sent, with integer IDs for alignment.
         """
         system_prompt = (
-            "You are an expert subtitle translator specializing in English to "
+            "You are an expert subtitle translator specializing in translating Spanish and English to "
             "Simplified Chinese (简体中文).\n"
             "Guidelines:\n"
             "1. Translate concisely and naturally, matching conversational Chinese "
@@ -125,7 +125,7 @@ class SubtitleTranslator:
         )
 
         # Build user prompt
-        input_items = [{"id": i, "en": entry["text"]} for i, entry in enumerate(batch)]
+        input_items = [{"id": i, "text": entry["text"]} for i, entry in enumerate(batch)]
 
         user_parts = []
         if prev_context:
@@ -188,7 +188,7 @@ class SubtitleTranslator:
             return text
 
         system_prompt = (
-            "You are a professional translator. Translate the following English text "
+            "You are a professional translator. Translate the following text (Spanish or English) "
             "to natural Simplified Chinese (简体中文). Return ONLY the translation, "
             "nothing else. Keep it concise and natural."
         )
