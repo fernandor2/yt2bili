@@ -3,64 +3,65 @@
 # ======================================================
 
 # YouTube channels to monitor
-# Get channel IDs from: https://www.youtube.com/@ChannelHandle
-# View page source → search for "channelId" or "UC"
+# Obtain channel IDs from: https://www.youtube.com/@ChannelHandle
+# View channel page source → search for "channelId" or "UC"
 channels:
   - name: "Example Channel"
     channel_id: "UCxxxxxxxxxxxxxxxxxxxxxxxxx"
-    # Optional: force a specific Bilibili partition for all videos of this channel
-    # If not specified, the category is dynamically detected from each YouTube video
+    # Optional: explicitly override the Bilibili partition TID for this channel.
+    # If omitted, the category is dynamically detected from each YouTube video.
     # tid: 17
 
 # Bilibili upload settings
 bilibili:
-  # Default Category/Partition ID if YouTube category cannot be detected or matched
+  # Default Category/Partition ID if YouTube category cannot be detected or mapped
   # 17 = Gaming (单机游戏), 188 = Tech/Digital (数码), 201 = Science/Education (科学科普)
   # 21 = Daily Life (日常), 138 = Comedy (搞笑), 71 = Entertainment (娱乐综合)
   tid: 17
 
   # Dynamic YouTube-to-Bilibili Category Mappings
+  # The system detects YouTube's category automatically. You can customize or override here:
   category_mapping:
-    "Gaming": 17                  # 单机游戏
-    "Science & Technology": 188   # 科技/数码
-    "Education": 201              # 科学科普
-    "Film & Animation": 27        # 综合动画
-    "Entertainment": 71           # 娱乐综合
-    "Comedy": 138                 # 搞笑
-    "Music": 130                  # 音乐综合
-    "Sports": 234                 # 运动综合
-    "Autos & Vehicles": 176       # 汽车综合
-    "Pets & Animals": 217         # 动物圈综合
-    "Travel & Events": 21         # 日常生活
-    "People & Blogs": 21          # 日常生活
-    "Howto & Style": 161          # 手工
-    "News & Politics": 204        # 热点资讯
+    "Gaming": 17                  # Single-player Games (单机游戏)
+    "Science & Technology": 188   # Technology & Digital (数码)
+    "Education": 201              # Science & Knowledge (科学科普)
+    "Film & Animation": 27        # Animation Comprehensive (综合)
+    "Entertainment": 71           # Entertainment Comprehensive (娱乐综合)
+    "Comedy": 138                 # Comedy (搞笑)
+    "Music": 130                  # Music Comprehensive (音乐综合)
+    "Sports": 234                 # Sports Comprehensive (运动综合)
+    "Autos & Vehicles": 176       # Automobiles & Vehicles (汽车综合)
+    "Pets & Animals": 217         # Pets & Animals (动物圈)
+    "Travel & Events": 21         # Daily Life & Travel (日常)
+    "People & Blogs": 21          # Daily Life (日常)
+    "Howto & Style": 161          # Crafts & Lifestyle (手工)
+    "News & Politics": 204        # Hot Topics & News (热点)
 
   # Copyright:
-  # 1 = Original (自制 - RECOMENDADO para contenido propio, mejor posicionamiento y monetización)
+  # 1 = Original (自制 - RECOMMENDED for creator-owned content: better algorithm traffic, protection & monetization)
   # 2 = Reprint (转载)
   copyright: 1
 
-  # Tags (comma-separated, max 12)
+  # Tags (comma-separated, up to 12 tags)
   tags: "原创,翻译,中文字幕"
 
-  # Cookie file path
+  # Path to persistent cookies file
   cookie_file: "/app/cookies.json"
 
 # Translation settings (Ollama)
 translation:
   # Ollama API URL: connects directly to the container 'ollama' in the 'ai-net' Docker network
   ollama_host: "http://ollama:11434"
-  # Model for translation (qwen2.5 series excels at EN→CN)
+  # Model for translation (qwen2.5 series is the top open-weights model for EN/ES -> CN)
   model: "qwen2.5:7b"
-  # Lines per translation batch (20-40 recommended)
+  # Lines per translation batch (20-40 recommended for context preservation)
   batch_size: 30
-  # Temperature for translation (lower = more consistent)
+  # Temperature for translation (lower = more deterministic and consistent)
   temperature: 0.3
 
 # Subtitle settings
 subtitles:
-  # Source language(s) for subtitles (regex patterns supported)
+  # Source language(s) for subtitles (supports regex patterns and exact codes)
   source_langs:
     - "en.*"
     - "es.*"
@@ -71,7 +72,7 @@ subtitles:
   burn_in: true
 
   # Subtitle styling mode:
-  # 3 = Opaque black background box (遮挡框) - Tapa limpiamente los subtítulos quemados originales
+  # 3 = Opaque black background box (遮挡框) - Cleanly covers pre-existing burned subtitles
   # 1 = Standard outline without background box
   border_style: 3
 
@@ -81,7 +82,7 @@ subtitles:
   # Vertical margin from the bottom edge (in pixels)
   margin_v: 30
 
-  # Colors in ASS hexadecimal (&HAABBGGRR):
+  # Colors in ASS hexadecimal format (&HAABBGGRR):
   # Box color: &H00000000 = 100% solid opaque black
   box_color: "&H00000000"
   # Text color: &H00FFFFFF = Crisp pure white text
@@ -92,9 +93,9 @@ subtitles:
   font_size: 20
 
   # FFmpeg encoding preset (ultrafast/superfast/veryfast/faster/fast/medium)
-  # 'faster' is ideal for AMD Ryzen 5700G (8 cores / 16 threads)
+  # 'faster' offers an optimal balance of speed and compression on AMD Ryzen 5700G
   ffmpeg_preset: "faster"
-  # CRF quality (18-23 recommended; lower = better quality, bigger file)
+  # CRF quality (18-23 recommended; lower = higher quality, larger file size)
   ffmpeg_crf: 20
 
 # Pipeline settings
@@ -105,16 +106,16 @@ pipeline:
   upload_cooldown_minutes: 60
 
   # Maximum number of videos to upload per pipeline run.
-  # Keeping this at 1 smoothly distributes uploads across the day without flooding.
+  # Keeping this at 1 smoothly distributes uploads across the schedule without burst flooding.
   max_uploads_per_run: 1
 
-  # Directory for downloaded videos
+  # Directory for temporary video downloads
   download_dir: "/app/data/downloads"
-  # SQLite database for tracking processed videos
+  # SQLite database for tracking processed videos and upload timestamps
   db_path: "/app/data/db/processed.db"
-  # Max concurrent downloads
+  # Maximum concurrent downloads
   max_downloads: 2
-  # Delete local files after successful upload
+  # Delete local media files after successful upload
   cleanup_after_upload: true
-  # Max video file size in GB (skip larger files)
+  # Maximum video file size in GB (skip larger files to protect disk)
   max_file_size_gb: 8

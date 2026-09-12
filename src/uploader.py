@@ -16,63 +16,63 @@ from biliup.plugins.bili_webup import BiliBili, Data
 
 logger = logging.getLogger("yt2bili.uploader")
 
-# Mapping of YouTube categories (English & Spanish standard labels) to Bilibili partition TIDs
+# Mapping of YouTube categories (standard English & localized Spanish labels) to Bilibili partition TIDs
 DEFAULT_CATEGORY_MAPPING = {
-    # Gaming (游戏 - 4) -> 17 (单机游戏)
+    # Gaming (Partition 4) -> 17 (Single-player Games)
     "gaming": 17,
     "videojuegos": 17,
     "juegos": 17,
     "games": 17,
-    # Science & Technology (科技 - 36) -> 188 (数码/科技)
+    # Science & Technology (Partition 36) -> 188 (Technology & Digital)
     "science & technology": 188,
     "ciencia y tecnología": 188,
     "technology": 188,
     "tecnología": 188,
-    # Education (知识) -> 201 (科学科普)
+    # Education -> 201 (Science & Knowledge)
     "education": 201,
     "educación": 201,
-    # Film & Animation (动画 - 1 / 影视) -> 27 (综合动画)
+    # Film & Animation (Partition 1) -> 27 (Animation Comprehensive)
     "film & animation": 27,
     "películas y animación": 27,
     "cine y animación": 27,
     "animation": 27,
     "animación": 27,
-    # Autos & Vehicles (汽车) -> 176 (汽车综合)
+    # Autos & Vehicles -> 176 (Automobiles Comprehensive)
     "autos & vehicles": 176,
     "motor": 176,
     "automóviles": 176,
     "autos": 176,
-    # Music (音乐 - 3) -> 130 (音乐综合)
+    # Music (Partition 3) -> 130 (Music Comprehensive)
     "music": 130,
     "música": 130,
-    # Pets & Animals (动物圈) -> 217 (动物圈综合)
+    # Pets & Animals -> 217 (Pets Comprehensive)
     "pets & animals": 217,
     "animales": 217,
     "mascotas y animales": 217,
-    # Sports (运动) -> 234 (运动综合)
+    # Sports -> 234 (Sports Comprehensive)
     "sports": 234,
     "deportes": 234,
-    # Travel & Events (出行 / 生活) -> 21 (日常)
+    # Travel & Events -> 21 (Daily Life / Travel)
     "travel & events": 21,
     "viajes y eventos": 21,
-    # People & Blogs (生活 - 160) -> 21 (日常)
+    # People & Blogs (Partition 160) -> 21 (Daily Life)
     "people & blogs": 21,
     "gente y blogs": 21,
-    # Comedy (搞笑) -> 138 (搞笑)
+    # Comedy -> 138 (Comedy)
     "comedy": 138,
     "comedia": 138,
     "humor": 138,
-    # Entertainment (娱乐) -> 71 (娱乐综合)
+    # Entertainment -> 71 (Entertainment Comprehensive)
     "entertainment": 71,
     "entretenimiento": 71,
-    # News & Politics (资讯) -> 204 (热点)
+    # News & Politics -> 204 (Hot Topics / News)
     "news & politics": 204,
     "noticias y política": 204,
-    # Howto & Style (手工 / 生活) -> 161 (手工)
+    # Howto & Style -> 161 (Crafts & Style)
     "howto & style": 161,
     "consejos y estilo": 161,
     "bricolaje": 161,
-    # Nonprofits & Activism -> 21 (日常)
+    # Nonprofits & Activism -> 21 (Daily Life)
     "nonprofits & activism": 21,
     "ong y activismo": 21,
 }
