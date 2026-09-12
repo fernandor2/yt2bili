@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     fonts-noto-cjk \
     libgomp1 \
+    sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
