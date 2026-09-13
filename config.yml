@@ -25,8 +25,8 @@ bilibili:
     "Gaming": 17                  # Single-player Games (单机游戏)
     "Science & Technology": 188   # Technology & Digital (数码)
     "Education": 201              # Science & Knowledge (科学科普)
-    "Film & Animation": 182       # Film & TV Discussions & Theories (影视杂谈)
-    "Film": 182                   # Film & TV Discussions & Theories (影视杂谈)
+    "Film & Animation": 241       # Entertainment Discussions & Pop Culture (娱乐杂谈)
+    "Film": 241                   # Entertainment Discussions & Pop Culture (娱乐杂谈)
     "Animation": 27               # Animation Comprehensive (综合动画)
     "Entertainment": 71           # Entertainment Comprehensive (娱乐综合)
     "Comedy": 138                 # Comedy (搞笑)
@@ -44,7 +44,7 @@ bilibili:
   # 2 = Reprint (转载)
   copyright: 1
 
-  # Tags (comma-separated, up to 12 tags)
+  # Tags (comma-separated, up to 10 tags)
   tags: "原创,翻译,中文字幕"
 
   # Path to persistent cookies file (stored inside persistent ./data/ directory)

@@ -33,14 +33,14 @@ DEFAULT_CATEGORY_MAPPING = {
     # Education -> 201 (Science & Knowledge)
     "education": 201,
     "educación": 201,
-    # Film & Television -> 182 (Film & TV Discussions / Movie Theories / 影视杂谈)
-    "film & animation": 182,
-    "películas y animación": 182,
-    "cine y animación": 182,
-    "film": 182,
-    "cine": 182,
-    "películas": 182,
-    "movies": 182,
+    # Film & Television -> 241 (Entertainment Discussions / Pop Culture / 娱乐杂谈)
+    "film & animation": 241,
+    "películas y animación": 241,
+    "cine y animación": 241,
+    "film": 241,
+    "cine": 241,
+    "películas": 241,
+    "movies": 241,
     # Animation (Partition 1) -> 27 (Animation Comprehensive)
     "animation": 27,
     "animación": 27,
@@ -142,6 +142,23 @@ class BilibiliUploader:
 
         return self.default_tid
 
+    @staticmethod
+    def clean_title(title: str) -> str:
+        """
+        Sanitize video title for Bilibili:
+        - Remove hashtags (e.g. #shorts, #漫威, #蜘蛛侠)
+        - Remove 4-byte Unicode emojis (astral plane characters >= U+10000)
+        - Remove common Unicode emoji & symbols in BMP (U+2600-U+27BF, variation selectors)
+        - Collapse multiple whitespace and trim
+        """
+        if not title:
+            return ""
+        cleaned = re.sub(r"#\S+", "", title)
+        cleaned = re.sub(r"[\U00010000-\U0010FFFF]", "", cleaned)
+        cleaned = re.sub(r"[\u2600-\u27BF\uFE00-\uFE0F]", "", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned if cleaned else title.strip()
+
     def upload(
         self,
         video_path: str,
@@ -185,6 +202,9 @@ class BilibiliUploader:
 
         # Resolve category TID
         tid = self.resolve_tid(yt_category=yt_category, tid_override=tid_override)
+
+        # Clean title for Bilibili: remove hashtags and emojis
+        title = self.clean_title(title)
 
         if draft and not title.startswith("【TEST/草稿】"):
             title = f"【TEST/草稿】{title}"
@@ -250,7 +270,12 @@ class BilibiliUploader:
 
                 # Submit the video (publish)
                 logger.info("Submitting video metadata...")
-                ret = bili.submit("web")
+                try:
+                    if hasattr(bili, "_BiliBili__session"):
+                        bili._BiliBili__session.get("https://member.bilibili.com/x/geetest/pre/add", timeout=5)
+                except Exception:
+                    pass
+                ret = bili.submit_web()
 
             # Check result
             if isinstance(ret, dict):
@@ -261,12 +286,12 @@ class BilibiliUploader:
                     logger.info(f"✅ Upload successful! BV: {bvid}, AV: {aid}")
                     return True
                 else:
-                    message = ret.get("message", str(ret))
-                    logger.error(f"❌ Bilibili rejected submission: code={code}, msg={message}")
+                    message = ret.get("message", "")
+                    logger.error(f"❌ Bilibili rejected submission: code={code}, msg='{message}', details={ret}")
                     return False
             else:
-                logger.info(f"✅ Upload completed: {ret}")
-                return True
+                logger.error(f"❌ Unexpected response from Bilibili: {ret}")
+                return False
 
         except FileNotFoundError:
             logger.error(
@@ -297,7 +322,7 @@ class BilibiliUploader:
             if clean and len(clean) <= 20 and clean not in combined:
                 combined.append(clean)
 
-        return combined[:12]
+        return combined[:10]
 
     def check_auth(self) -> bool:
         """Verify that the cookie file exists and is loadable."""
