@@ -15,6 +15,23 @@ import yt_dlp
 warnings.filterwarnings("ignore")
 
 logger = logging.getLogger("yt2bili.downloader")
+MEMBERS_ONLY_PATTERNS = [
+    "members-only",
+    "members only",
+    "channel's members",
+    "join this channel",
+    "join to get access",
+    "subscriber_only",
+    "miembros de este canal",
+    "solo para miembros",
+    "contenido exclusivo para miembros",
+    "unirse a este canal",
+]
+
+
+class MembersOnlyVideoError(Exception):
+    """Raised when a video is restricted to channel members only."""
+    pass
 
 
 class VideoDownloader:
@@ -139,6 +156,10 @@ class VideoDownloader:
                 logger.info("No subtitle track available for this video.")
                 return None
         except Exception as e:
+            err_str = str(e).lower()
+            if any(p in err_str for p in MEMBERS_ONLY_PATTERNS):
+                logger.warning(f"🔒 Video {video_id} is members-only (detected in subtitle fetch): {e}")
+                raise MembersOnlyVideoError(str(e))
             logger.warning(
                 f"Subtitle fetch encountered non-fatal error: {e}. "
                 f"Will proceed with video download."
@@ -171,12 +192,20 @@ class VideoDownloader:
             with yt_dlp.YoutubeDL(video_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
         except Exception as e:
+            err_str = str(e).lower()
+            if any(p in err_str for p in MEMBERS_ONLY_PATTERNS):
+                logger.warning(f"🔒 Video {video_id} is members-only: {e}")
+                raise MembersOnlyVideoError(str(e))
             logger.exception(f"Video download failed: {e}")
             return None
 
         if not info:
             logger.error(f"Failed to extract info for {video_id}")
             return None
+
+        if info.get("availability") == "subscriber_only":
+            logger.warning(f"🔒 Video {video_id} is subscriber_only (members-only)")
+            raise MembersOnlyVideoError("availability is subscriber_only")
 
         height = info.get("height") or 0
         width = info.get("width") or 0

@@ -63,13 +63,13 @@ class Database:
         logger.info(f"Database initialized at {self.db_path}")
 
     def is_processed(self, video_id: str) -> bool:
-        """Check if a video has been successfully processed."""
+        """Check if a video has been successfully processed or permanently skipped."""
         with self._get_conn() as conn:
             row = conn.execute(
                 "SELECT status FROM processed_videos WHERE video_id = ?",
                 (video_id,),
             ).fetchone()
-            return row is not None and row["status"] == "done"
+            return row is not None and row["status"] in ("done", "members_only", "skipped")
 
     def is_recently_failed(self, video_id: str, hours: int = 24) -> bool:
         """Check if a video failed processing within the last N hours."""
@@ -94,7 +94,7 @@ class Database:
                     channel_name = COALESCE(NULLIF(excluded.channel_name, ''), channel_name),
                     title = COALESCE(NULLIF(excluded.title, ''), title),
                     upload_date = COALESCE(NULLIF(excluded.upload_date, ''), upload_date),
-                    status = CASE WHEN status = 'done' THEN 'done' ELSE 'pending' END,
+                    status = CASE WHEN status IN ('done', 'members_only', 'skipped') THEN status ELSE 'pending' END,
                     updated_at = datetime('now')
                 """,
                 (video_id, channel_id, channel_name, title, upload_date),
@@ -209,6 +209,23 @@ class Database:
             )
             conn.commit()
         logger.warning(f"Marked {video_id} as failed: {error_msg}")
+
+    def mark_members_only(self, video_id: str, reason: str = ""):
+        """Mark a video as permanently skipped because it is restricted to channel members."""
+        with self._get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO processed_videos (video_id, status, error_msg)
+                VALUES (?, 'members_only', ?)
+                ON CONFLICT(video_id) DO UPDATE SET
+                    status = 'members_only',
+                    error_msg = ?,
+                    updated_at = datetime('now')
+                """,
+                (video_id, reason, reason),
+            )
+            conn.commit()
+        logger.warning(f"Marked {video_id} as members_only: {reason}")
 
     def set_metadata(self, key: str, value: str):
         """Set a persistent key-value metadata entry."""

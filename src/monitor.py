@@ -169,6 +169,10 @@ class YouTubeMonitor:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
                 if info:
+                    if info.get("availability") == "subscriber_only":
+                        logger.info(f"  Video {video_id} is members-only (subscriber_only). Marking in DB.")
+                        self.db.mark_members_only(video_id, "subscriber_only")
+                        return None, ""
                     ud = info.get("upload_date")
                     title = info.get("title") or ""
                     if ud:
@@ -176,6 +180,14 @@ class YouTubeMonitor:
                         self.db.set_upload_date(video_id, ud_str, title=title)
                         return ud_str, title
         except Exception as e:
+            err_str = str(e).lower()
+            if any(p in err_str for p in [
+                "members-only", "members only", "channel's members", "join this channel",
+                "subscriber_only", "miembros de este canal", "solo para miembros"
+            ]):
+                logger.info(f"  Video {video_id} is members-only ({e}). Marking in DB.")
+                self.db.mark_members_only(video_id, f"members_only: {str(e)[:150]}")
+                return None, ""
             logger.debug(f"Could not extract upload date for {video_id}: {e}")
         return None, ""
 
@@ -210,6 +222,12 @@ class YouTubeMonitor:
                             continue
                         video_id = entry.get("id")
                         if not video_id:
+                            continue
+
+                        # Check if tab metadata already flags members-only
+                        if entry.get("availability") == "subscriber_only":
+                            logger.info(f"  [{channel_name}] Video {video_id} is members-only (tab metadata). Marking in DB.")
+                            self.db.mark_members_only(video_id, "subscriber_only")
                             continue
 
                         # Check timestamp if present

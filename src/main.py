@@ -16,7 +16,7 @@ import yaml
 
 from db import Database
 from monitor import YouTubeMonitor
-from downloader import VideoDownloader
+from downloader import VideoDownloader, MembersOnlyVideoError
 from translator import SubtitleTranslator
 from burner import SubtitleBurner
 from uploader import BilibiliUploader
@@ -99,7 +99,16 @@ def process_video(video: dict, config: dict, db: Database) -> bool:
         # ── Step 1: Download video and subtitles ──
         logger.info("[1/5] Downloading video and subtitles...")
         downloader = VideoDownloader(config)
-        dl_result = downloader.download(video_id, download_dir)
+        try:
+            dl_result = downloader.download(video_id, download_dir)
+        except MembersOnlyVideoError as e:
+            logger.warning(
+                f"🔒 Video {video_id} is members-only. "
+                f"Permanently marking as 'members_only' so it will not be retried."
+            )
+            db.mark_members_only(video_id, f"members_only: {str(e)[:150]}")
+            _cleanup(download_dir, dl_config)
+            return False
 
         if not dl_result:
             logger.error(f"Download failed for {video_id}")
