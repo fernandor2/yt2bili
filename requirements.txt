@@ -1,4 +1,4 @@
-yt-dlp>=2024.12.01
+yt-dlp[default]>=2025.01.01
 curl-cffi>=0.7.0
 pysubs2>=1.7.0
 requests>=2.31.0

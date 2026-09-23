@@ -5,10 +5,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     cron \
     curl \
+    unzip \
     fonts-noto-cjk \
     libgomp1 \
     sqlite3 \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Deno (required by yt-dlp as JavaScript runtime for YouTube anti-bot challenges)
+RUN curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh
 
 WORKDIR /app
 
